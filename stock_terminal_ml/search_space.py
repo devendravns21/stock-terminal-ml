@@ -26,23 +26,31 @@ WIDEN_KEYS = (
 )
 
 
+# key -> (kind, low, high, log). Single source for `suggest` and the dashboard.
+RANGES: dict[str, tuple[str, float, float, bool]] = {
+    "touch_tolerance_pct":  ("float", 0.03, 0.3, True),
+    "break_tolerance_pct":  ("float", 0.03, 0.3, True),
+    "extension_pct_min":    ("float", 0.05, 0.6, True),
+    "retest_max_dip_pct":   ("float", 0.05, 0.5, True),
+    "cooldown_bars":        ("int",   0,    30,  False),
+    "min_move_pct":         ("float", 0.1,  1.0, True),
+    # --widen
+    "retest_tolerance_pct": ("float", 0.03, 0.4, True),
+    "max_bars_to_retest":   ("int",   3,    20,  False),
+    "break_lookback_bars":  ("int",   10,   60,  False),
+    "flip_min_move_pct":    ("float", 0.1,  1.5, True),
+}
+
+
 def suggest(trial, widen: bool = False) -> Params:
     """Produce a `Params` instance from an Optuna trial."""
-    kwargs = {
-        "touch_tolerance_pct": trial.suggest_float("touch_tolerance_pct", 0.03, 0.3, log=True),
-        "break_tolerance_pct": trial.suggest_float("break_tolerance_pct", 0.03, 0.3, log=True),
-        "extension_pct_min":   trial.suggest_float("extension_pct_min",   0.05, 0.6, log=True),
-        "retest_max_dip_pct":  trial.suggest_float("retest_max_dip_pct",  0.05, 0.5, log=True),
-        "cooldown_bars":       trial.suggest_int("cooldown_bars", 0, 30),
-        "min_move_pct":        trial.suggest_float("min_move_pct", 0.1, 1.0, log=True),
-    }
-    if widen:
-        kwargs.update({
-            "retest_tolerance_pct": trial.suggest_float("retest_tolerance_pct", 0.03, 0.4, log=True),
-            "max_bars_to_retest":   trial.suggest_int("max_bars_to_retest", 3, 20),
-            "break_lookback_bars":  trial.suggest_int("break_lookback_bars", 10, 60),
-            "flip_min_move_pct":    trial.suggest_float("flip_min_move_pct", 0.1, 1.5, log=True),
-        })
+    kwargs = {}
+    for key in tuned_keys(widen):
+        kind, lo, hi, log = RANGES[key]
+        if kind == "int":
+            kwargs[key] = trial.suggest_int(key, int(lo), int(hi))
+        else:
+            kwargs[key] = trial.suggest_float(key, lo, hi, log=log)
     return Params(**kwargs)
 
 

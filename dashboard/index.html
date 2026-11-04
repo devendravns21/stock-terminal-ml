@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dev Signal ML · Trainer</title>
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #121722; --panel-2: #171d2a; --line: #232b3b;
+    --text: #e6e9ef; --muted: #8a93a6; --dim: #5d6679;
+    --accent: #8b5cf6; --accent-2: #a78bfa; --up: #22c55e; --down: #ef4444;
+    --warn: #f59e0b; --info: #38bdf8;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --r: 10px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent-2); }
+  code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
+  header.top { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 14px;
+    align-items: center; padding: 10px 16px; background: rgba(11,14,20,.92);
+    backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+  header.top h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+  header.top h1 span { color: var(--accent-2); }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; }
+  .dot.up { background: var(--up); } .dot.down { background: var(--down); }
+  .dot.run { background: var(--info); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  .cols { display: grid; gap: 16px; grid-template-columns: 1fr; }
+  @media (min-width: 1024px) { .cols { grid-template-columns: minmax(380px, 5fr) 7fr; } }
+  section.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+    padding: 16px; min-width: 0; }
+  .card h2 { margin: 0 0 4px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent); color: #fff; font-size: 12px; }
+  .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; }
+  .row { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; margin-bottom: 12px; }
+  .row.three { grid-template-columns: 1fr 1fr 1fr; }
+  @media (max-width: 640px) { .row.three { grid-template-columns: 1fr 1fr; } }
+  label.f { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+  input, select { width: 100%; min-height: 40px; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font: inherit; }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  input[type=checkbox] { width: 18px; min-height: 18px; accent-color: var(--accent); }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 13px; min-height: 36px; cursor: pointer; }
+  .hint { font-size: 12px; color: var(--dim); margin-top: -4px; margin-bottom: 10px; }
+  .hint.warn { color: var(--warn); }
+  button { min-height: 40px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--text); font: inherit; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.danger { border-color: #5b2330; color: #fca5a5; }
+  button.small { min-height: 32px; padding: 4px 10px; font-size: 12px; }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg button { flex: 1; min-width: 90px; }
+  .seg button.on { border-color: var(--accent); background: rgba(139,92,246,.18); }
+  .seg button small { display: block; color: var(--muted); font-size: 11px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 172px; overflow: auto; padding: 2px; }
+  .chip { min-height: 30px; padding: 4px 10px; border-radius: 999px; font-size: 12px; }
+  .chip.on { border-color: var(--accent); background: rgba(139,92,246,.2); }
+  .bar-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+  .bar-actions input { flex: 1; min-width: 120px; min-height: 32px; padding: 4px 10px; }
+  pre.cmd { margin: 0; padding: 10px; background: #0a0d13; border: 1px solid var(--line); border-radius: 8px;
+    white-space: pre-wrap; word-break: break-all; color: #c4b5fd; max-height: 180px; overflow: auto; }
+  details { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+  .err { color: #fca5a5; background: rgba(239,68,68,.1); border: 1px solid #5b2330; padding: 8px 10px;
+    border-radius: 8px; margin: 10px 0 0; font-size: 13px; }
+  .note { color: var(--muted); background: var(--panel-2); border: 1px dashed var(--line); padding: 10px 12px;
+    border-radius: 8px; font-size: 12.5px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--panel); }
+  th.sort { cursor: pointer; user-select: none; } th.sort:hover { color: var(--text); }
+  tbody tr.click { cursor: pointer; } tbody tr.click:hover { background: var(--panel-2); }
+  tbody tr.sel { background: rgba(139,92,246,.14); }
+  .scroll { overflow: auto; max-height: 460px; border: 1px solid var(--line); border-radius: 8px; }
+  .pos { color: var(--up); } .neg { color: var(--down); } .mut { color: var(--muted); }
+
+  .head-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .badge { padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid; }
+  .b-running, .b-starting { color: var(--info); border-color: #164e63; background: rgba(56,189,248,.1); }
+  .b-done { color: var(--up); border-color: #14532d; background: rgba(34,197,94,.1); }
+  .b-error, .b-interrupted { color: var(--down); border-color: #5b2330; background: rgba(239,68,68,.1); }
+  .b-cancelled { color: var(--warn); border-color: #5b4313; background: rgba(245,158,11,.1); }
+  .progress { height: 12px; background: var(--panel-2); border-radius: 999px; overflow: hidden; border: 1px solid var(--line); }
+  .progress > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--info)); transition: width .4s; }
+  .tiles { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); margin: 12px 0; }
+  .tile { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .tile .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  .tile .v { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .symgrid { display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); max-height: 300px; overflow: auto; }
+  .sym { text-align: left; padding: 6px 8px; min-height: 52px; border-radius: 8px; display: grid; gap: 3px; }
+  .sym .nm { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sym .mini { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .sym .mini > div { height: 100%; background: var(--info); }
+  .sym .meta { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .sym.s-done { border-color: #14532d; } .sym.s-done .mini > div { background: var(--up); }
+  .sym.s-running { border-color: #164e63; }
+  .sym.s-error, .sym.s-stopped { border-color: #5b2330; } .sym.s-error .mini > div { background: var(--down); }
+  .sym.s-queued { opacity: .55; }
+  .sym.sel { outline: 2px solid var(--accent); }
+  .tabs { display: flex; gap: 6px; margin: 14px 0 8px; }
+  .tabs button.on { border-color: var(--accent); background: rgba(139,92,246,.18); }
+  pre.log { margin: 0; height: 260px; overflow: auto; padding: 10px; background: #07090d; border: 1px solid var(--line);
+    border-radius: 8px; color: #cbd5e1; white-space: pre-wrap; word-break: break-word; }
+  .chart { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-top: 10px; }
+  .chart svg { width: 100%; height: 170px; display: block; }
+  .legend { display: flex; gap: 12px; font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+  ol.pipe { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); counter-reset: step; }
+  ol.pipe li { position: relative; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  ol.pipe li .st { position: absolute; top: 10px; right: 10px; font-size: 11px; font-weight: 600; }
+  ol.pipe li h3 { margin: 0 0 6px; font-size: 13px; padding-right: 64px; }
+  ol.pipe li h3::before { counter-increment: step; content: counter(step) ". "; color: var(--accent-2); }
+  ol.pipe li p { margin: 0 0 6px; font-size: 12px; color: var(--muted); }
+  ol.pipe li code { font-size: 11.5px; color: #c4b5fd; word-break: break-all; }
+  ol.pipe li.done { border-color: #14532d; } ol.pipe li.done .st { color: var(--up); }
+  ol.pipe li.active { border-color: var(--info); } ol.pipe li.active .st { color: var(--info); }
+  ol.pipe li.warn { border-color: #5b4313; } ol.pipe li.warn .st { color: var(--warn); }
+  ol.pipe li.pending .st { color: var(--dim); }
+  .twocol { display: grid; gap: 16px; grid-template-columns: 1fr; }
+  @media (min-width: 1024px) { .twocol { grid-template-columns: 3fr 2fr; } }
+  .kv { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .kv span { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 12px; color: var(--muted); }
+  .kv b { color: var(--text); font-weight: 600; }
+  .empty { color: var(--dim); padding: 24px; text-align: center; border: 1px dashed var(--line); border-radius: 8px; }
+  h4 { margin: 14px 0 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Dev Signal <span>ML</span> · Trainer</h1>
+  <div class="pills">
+    <span class="pill" id="pill-backend"><i class="dot"></i>Main backend</span>
+    <span class="pill" id="pill-frontend"><i class="dot"></i>Main frontend</span>
+    <span class="pill" id="pill-models"><i class="dot up"></i>0 models</span>
+  </div>
+</header>
+
+<main>
+  <div class="cols">
+    <!-- ============================== 1. INPUTS -->
+    <section class="card" id="inputs">
+      <h2><span class="n">1</span>Inputs</h2>
+      <p class="sub">What the trainer will tune. Optuna searches Dev Signal's knobs per symbol on the offline candles, scored by the backtest simulator.</p>
+
+      <div class="row">
+        <label class="f">Dataset<select id="f-dataset"></select></label>
+        <label class="f">Model name (optional)<input id="f-label" maxlength="60" placeholder="Dev Signal ML1"></label>
+      </div>
+
+      <div class="row">
+        <label class="f">Train from<input type="date" id="f-from"></label>
+        <label class="f">Train to<input type="date" id="f-to"></label>
+      </div>
+      <div class="bar-actions" id="quick-windows"></div>
+      <div class="hint" id="window-hint"></div>
+
+      <div class="row three">
+        <label class="f">Target %<input type="number" id="f-target" step="0.1" min="0.1" value="1.0"></label>
+        <label class="f">Stop loss %<input type="number" id="f-sl" step="0.1" min="0.1" value="0.5"></label>
+        <label class="f">Workers<input type="number" id="f-jobs" min="0" placeholder="auto"></label>
+      </div>
+
+      <label class="f" style="margin-bottom:6px">Search preset</label>
+      <div class="seg" id="f-preset" style="margin-bottom:12px"></div>
+
+      <div class="row">
+        <label class="f">Trials / symbol (override)<input type="number" id="f-trials" min="1" max="2000" placeholder="preset"></label>
+        <label class="f">Objective<select id="f-objective"></select></label>
+      </div>
+      <div class="hint" id="objective-hint"></div>
+
+      <div class="row">
+        <label class="check"><input type="checkbox" id="f-widen"> Widen search (+4 knobs)</label>
+        <label class="check"><input type="checkbox" id="f-publish" checked> Publish to main repo</label>
+      </div>
+
+      <label class="f" style="margin-bottom:6px">Symbols <span id="sym-count" class="mut"></span></label>
+      <div class="bar-actions">
+        <input id="sym-filter" placeholder="Filter…">
+        <button class="small" id="sym-all">All</button>
+        <button class="small" id="sym-none">Clear</button>
+        <button class="small" id="sym-few" title="Five symbols for a quick test run">Quick 5</button>
+      </div>
+      <div class="chips" id="sym-chips"></div>
+
+      <details style="margin-top:12px">
+        <summary>Search space: what Optuna tunes</summary>
+        <div class="scroll" style="margin-top:8px;max-height:none">
+          <table><thead><tr><th>Knob</th><th>Default</th><th>Range</th><th>Scale</th><th>Tuned</th></tr></thead>
+          <tbody id="space-body"></tbody></table>
+        </div>
+      </details>
+
+      <label class="f" style="margin-bottom:6px">Command that will run in the new Terminal window</label>
+      <pre class="cmd" id="cmd-preview"></pre>
+      <div class="hint" id="estimate" style="margin-top:8px"></div>
+
+      <button class="primary" id="start" style="width:100%;min-height:46px;margin-top:4px">▶ Start training in a new Terminal</button>
+      <div id="start-err"></div>
+    </section>
+
+    <!-- ============================== 2. PROGRESS -->
+    <section class="card" id="progress-card">
+      <div class="head-line">
+        <h2 style="margin:0"><span class="n">2</span>Progress</h2>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <select id="run-picker" style="min-height:32px;padding:4px 8px;width:auto;max-width:260px"></select>
+          <button class="small danger" id="stop" hidden>■ Stop</button>
+        </div>
+      </div>
+      <div id="run-empty" class="empty">No run yet. Pick inputs and press <b>Start</b>. A Terminal window opens and its progress streams here.</div>
+      <div id="run-view" hidden>
+        <div class="head-line" style="margin-bottom:8px">
+          <div><b id="run-title"></b> <span class="mut mono" id="run-id"></span></div>
+          <span class="badge" id="run-status"></span>
+        </div>
+        <div class="progress"><div id="run-bar" style="width:0"></div></div>
+        <div class="mut" style="font-size:12px;margin-top:4px" id="run-bar-text"></div>
+        <div class="tiles">
+          <div class="tile"><div class="k">Symbols</div><div class="v" id="t-symbols">–</div></div>
+          <div class="tile"><div class="k">Trials</div><div class="v" id="t-trials">–</div></div>
+          <div class="tile"><div class="k">Elapsed</div><div class="v" id="t-elapsed">–</div></div>
+          <div class="tile"><div class="k">ETA</div><div class="v" id="t-eta">–</div></div>
+          <div class="tile"><div class="k">Errors</div><div class="v" id="t-errors">–</div></div>
+        </div>
+        <h4>Per-symbol studies <span class="mut" style="font-weight:400">· click one to see its trials</span></h4>
+        <div class="symgrid" id="symgrid"></div>
+        <div class="chart" id="trial-chart" hidden>
+          <div class="head-line" style="margin:0 0 4px"><b id="chart-title" style="font-size:12.5px"></b><span class="mut" style="font-size:11.5px" id="chart-meta"></span></div>
+          <svg id="chart-svg" preserveAspectRatio="none"></svg>
+          <div class="legend"><span><i style="background:#64748b"></i>trial score</span><span><i style="background:#a78bfa"></i>best so far</span><span><i style="background:#ef4444"></i>pruned / failed</span></div>
+        </div>
+        <div class="tabs">
+          <button class="small on" data-tab="log">Terminal output</button>
+          <button class="small" data-tab="events">Events</button>
+          <button class="small" data-tab="config">Run config</button>
+        </div>
+        <pre class="log" id="tab-log"></pre>
+        <pre class="log" id="tab-events" hidden></pre>
+        <pre class="log" id="tab-config" hidden></pre>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============================== 3. PIPELINE -->
+  <section class="card">
+    <h2><span class="n">3</span>How a run becomes a chart indicator in stock-terminal</h2>
+    <p class="sub">Each step updates live for the selected run. Nothing in the main repo's code changes. The trained model is a JSON file that the backend and frontend pick up.</p>
+    <ol class="pipe" id="pipeline"></ol>
+    <div class="note" style="margin-top:12px">
+      <b>Which parameters does the chart use?</b> In <code>devSignalMlDef.js</code> the indicator looks up
+      <code>per_symbol[&lt;chart symbol&gt;].params</code> first. If the symbol wasn't trained, it uses <code>global_fallback.params</code>
+      (the median of each knob across symbols). If neither exists, it draws no markers and the legend says
+      <i>"no tuned params for &lt;symbol&gt;"</i>. Knobs that weren't tuned keep Dev Signal's defaults.
+    </div>
+  </section>
+
+  <!-- ============================== 4. RESULTS -->
+  <section class="card">
+    <div class="head-line">
+      <h2 style="margin:0"><span class="n">4</span>Results</h2>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <select id="model-picker" style="min-height:32px;padding:4px 8px;width:auto;max-width:320px"></select>
+        <a id="model-download" class="mut" style="font-size:12px">download JSON</a>
+      </div>
+    </div>
+    <div id="models-empty" class="empty">No trained models yet. Results appear here as soon as a run writes its artifact.</div>
+    <div id="model-view" hidden>
+      <div class="kv" id="model-meta"></div>
+      <div class="tiles" id="model-tiles"></div>
+      <div class="twocol">
+        <div>
+          <h4>Per symbol: cross-validation (in window) vs out-of-sample (30 trading days after it) <span class="mut" style="font-weight:400">· click a row</span></h4>
+          <div class="scroll"><table>
+            <thead><tr id="res-head"></tr></thead>
+            <tbody id="res-body"></tbody>
+          </table></div>
+        </div>
+        <div>
+          <h4 id="detail-title">Tuned parameters</h4>
+          <div class="scroll" style="max-height:none"><table>
+            <thead><tr><th>Knob</th><th>Default</th><th>Tuned</th><th>Change</th></tr></thead>
+            <tbody id="detail-body"></tbody>
+          </table></div>
+          <div id="detail-extra"></div>
+        </div>
+      </div>
+      <details style="margin-top:14px"><summary>Raw model JSON</summary><pre class="log" id="model-raw" style="height:320px;margin-top:8px"></pre></details>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id)
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+const fmt = (v, d = 2) => (v == null || Number.isNaN(v) ? '–' : Number(v).toFixed(d))
+const pct = (v, d = 2) => (v == null ? '–' : `${v > 0 ? '+' : ''}${Number(v).toFixed(d)}%`)
+const cls = (v) => (v == null ? 'mut' : v > 0 ? 'pos' : v < 0 ? 'neg' : 'mut')
+const dur = (s) => {
+  if (s == null) return '–'
+  s = Math.round(s)
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60
+  return h ? `${h}h ${m}m` : m ? `${m}m ${x}s` : `${x}s`
+}
+const median = (xs) => {
+  const a = xs.filter((x) => x != null).sort((p, q) => p - q)
+  if (!a.length) return null
+  const m = Math.floor(a.length / 2)
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2
+}
+const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
+const addMonths = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 10) }
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts })
+  const body = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(body.detail || `HTTP ${r.status}`)
+  return body
+}
+
+const S = {
+  info: null, main: null, runs: [], run: null, runId: null, symbol: null, tab: 'log',
+  models: [], modelRef: null, resSym: null, sort: { key: 'oos_pnl', dir: -1 },
+  preset: 'fast', selected: new Set(), wasRunning: false,
+}
+
+// ------------------------------------------------------------ inputs
+function dataset() { return S.info.datasets.find((d) => d.dataset === $('f-dataset').value) || S.info.datasets[0] }
+// ~30 trading days ≈ 45 calendar days must remain after "to" for the OOS hold-out.
+function oosSafeTo(ds) { return addDays(ds.to, -45) }
+
+function renderInputs() {
+  const info = S.info
+  $('f-dataset').innerHTML = info.datasets.map((d) =>
+    `<option value="${esc(d.dataset)}" ${d.dataset === info.default_dataset ? 'selected' : ''}>${esc(d.title || d.dataset)} (${d.symbols.length})</option>`).join('')
+  $('f-objective').innerHTML = info.objectives.map((o) => `<option value="${esc(o.name)}">${esc(o.name)}</option>`).join('')
+  $('f-preset').innerHTML = Object.entries(info.presets).map(([k, p]) =>
+    `<button type="button" data-p="${k}" class="${k === S.preset ? 'on' : ''}">${k[0].toUpperCase() + k.slice(1)}<small>${p.trials} trials${p.pruner ? ' · pruner' : ''}</small></button>`).join('')
+  $('f-jobs').placeholder = `auto (${Math.max(1, info.cpu_count - 1)})`
+  $('space-body').innerHTML = info.search_space.map((k) => `<tr>
+      <td class="mono">${esc(k.key)}</td><td>${esc(k.default)}</td>
+      <td>${k.low} – ${k.high}</td><td class="mut">${k.kind}${k.log ? ' · log' : ''}</td>
+      <td>${k.widen_only ? '<span class="mut">widen only</span>' : '<span class="pos">yes</span>'}</td></tr>`).join('')
+  onDataset()
+}
+
+function onDataset() {
+  const ds = dataset()
+  S.selected = new Set(ds.symbols.filter((s) => s.kind !== 'index').map((s) => s.symbol))
+  setWindow(3)
+  $('quick-windows').innerHTML = [2, 3, 4, 6].map((m) => `<button class="small" data-m="${m}">Last ${m}M</button>`).join('') +
+    `<span class="mut" style="font-size:12px">data ${ds.from} → ${ds.to}</span>`
+  renderSymbols()
+  sync()
+}
+
+function setWindow(months) {
+  const ds = dataset()
+  const to = oosSafeTo(ds)
+  let from = addMonths(to, -months)
+  if (from < ds.from) from = addDays(ds.from, 3)
+  $('f-from').value = from
+  $('f-to').value = to
+}
+
+function renderSymbols() {
+  const ds = dataset()
+  const q = $('sym-filter').value.trim().toUpperCase()
+  $('sym-chips').innerHTML = ds.symbols.filter((s) => !q || s.symbol.includes(q)).map((s) =>
+    `<button type="button" class="chip ${S.selected.has(s.symbol) ? 'on' : ''}" data-s="${esc(s.symbol)}">${esc(s.symbol)}</button>`).join('')
+  $('sym-count').textContent = `· ${S.selected.size} of ${ds.symbols.length} selected`
+}
+
+function formBody() {
+  return {
+    dataset: $('f-dataset').value, from: $('f-from').value, to: $('f-to').value,
+    target_pct: Number($('f-target').value), sl_pct: Number($('f-sl').value),
+    preset: S.preset, trials: $('f-trials').value || null, objective: $('f-objective').value,
+    widen: $('f-widen').checked, publish: $('f-publish').checked, jobs: Number($('f-jobs').value || 0),
+    label: $('f-label').value.trim(), symbols: [...S.selected],
+  }
+}
+
+function sync() {
+  if (!S.info) return
+  const b = formBody(), info = S.info, ds = dataset()
+  const id = info.next_model_id
+  $('f-label').placeholder = id.replace('dev_signal_ml', 'Dev Signal ML')
+  const obj = info.objectives.find((o) => o.name === b.objective)
+  $('objective-hint').textContent = obj?.help || ''
+  const trials = Number(b.trials) || info.presets[b.preset].trials
+  const out = b.publish ? `${info.paths.models_dir}/${id}.json` : `${info.paths.runs_dir}/<run>/${id}.json`
+  const all = b.symbols.length === ds.symbols.length
+  const q = (s) => (/[^\w@%+=:,./-]/.test(s) ? `'${s.replace(/'/g, "'\\''")}'` : s)
+  const parts = ['.venv/bin/python -m stock_terminal_ml.train', `--window ${b.from}:${b.to}`, `--target-pct ${b.target_pct}`, `--sl-pct ${b.sl_pct}`,
+    `--preset ${b.preset}`, `--dataset ${b.dataset}`, `--objective ${b.objective}`, `--model-id ${id}`, `--label ${q(b.label || $('f-label').placeholder)}`,
+    `--output ${q(out)}`, `--progress outputs/runs/<run>/progress.jsonl`, `--jobs ${b.jobs}`]
+  if (b.trials) parts.push(`--trials ${b.trials}`)
+  if (!all) parts.push(`--symbols ${q(b.symbols.join(','))}`)
+  if (b.widen) parts.push('--widen')
+  $('cmd-preview').textContent = parts.join(' \\\n    ')
+  const total = trials * b.symbols.length
+  const workers = b.jobs || Math.max(1, info.cpu_count - 1)
+  $('estimate').innerHTML = `<b>${b.symbols.length}</b> symbols × <b>${trials}</b> trials = <b>${total.toLocaleString()}</b> backtest trials (each scored over 3 CV folds) on <b>${workers}</b> worker${workers > 1 ? 's' : ''}. Output → <code>${esc(id)}.json</code>${b.publish ? ' in the main repo' : ' (kept in this repo, not published)'}.`
+  const hint = $('window-hint')
+  const safe = oosSafeTo(ds)
+  if (b.to > safe) { hint.className = 'hint warn'; hint.textContent = `"To" is after ${safe}, so fewer than ~30 trading days remain for the out-of-sample check. OOS results will be thin or missing.` }
+  else { hint.className = 'hint'; hint.textContent = `Out-of-sample hold-out: the ~30 trading days after ${b.to}. These are never seen during the search.` }
+  $('start').disabled = !b.symbols.length || !b.from || !b.to || S.run?.status === 'running'
+}
+
+// ------------------------------------------------------------ runs
+async function startRun() {
+  $('start-err').innerHTML = ''
+  $('start').disabled = true
+  try {
+    const run = await api('/api/runs', { method: 'POST', body: JSON.stringify(formBody()) })
+    S.runId = run.run_id; S.run = run; S.symbol = null
+    await loadRuns()
+    renderRun()
+    S.info.next_model_id = (await api('/api/info')).next_model_id
+    pollRun()
+  } catch (e) {
+    $('start-err').innerHTML = `<div class="err">${esc(e.message)}</div>`
+  } finally { sync() }
+}
+
+async function loadRuns() {
+  S.runs = await api('/api/runs')
+  $('run-picker').innerHTML = S.runs.length
+    ? S.runs.map((r) => `<option value="${r.run_id}" ${r.run_id === S.runId ? 'selected' : ''}>${esc(r.label || r.model_id)} · ${r.run_id} · ${r.status}</option>`).join('')
+    : '<option>No runs yet</option>'
+}
+
+let runTimer = null
+async function pollRun() {
+  clearTimeout(runTimer)
+  if (!S.runId) return
+  try {
+    const q = S.symbol ? `?symbol=${encodeURIComponent(S.symbol)}` : ''
+    S.run = await api(`/api/runs/${S.runId}${q}`)
+    renderRun()
+    const live = ['running', 'starting'].includes(S.run.status)
+    if (S.wasRunning && !live) { // just finished → refresh everything downstream
+      await Promise.all([loadRuns(), loadModels(S.run.config.model_id), loadMain()])
+    }
+    S.wasRunning = live
+    runTimer = setTimeout(pollRun, live ? 1000 : 5000)
+  } catch (e) {
+    runTimer = setTimeout(pollRun, 3000)
+  }
+}
+
+function renderRun() {
+  const r = S.run
+  $('run-empty').hidden = !!r; $('run-view').hidden = !r
+  if (!r) return
+  const c = r.config
+  $('run-title').textContent = `${c.label} (${c.model_id})`
+  $('run-id').textContent = `run ${r.run_id}${c.launched_in ? ' · ' + c.launched_in : ''}${r.pid ? ' · pid ' + r.pid : ''}`
+  $('run-status').className = `badge b-${r.status}`
+  $('run-status').textContent = r.status
+  $('stop').hidden = r.status !== 'running'
+  const p = r.trials_total ? (r.trials_done / r.trials_total) * 100 : 0
+  $('run-bar').style.width = `${r.status === 'done' ? 100 : p}%`
+  $('run-bar-text').textContent = r.status === 'done'
+    ? `Finished: ${r.symbols_done}/${r.symbols_total} symbols tuned`
+    : `${p.toFixed(1)}% · ${r.trials_done.toLocaleString()} of ${r.trials_total.toLocaleString()} trials`
+  $('t-symbols').textContent = `${r.symbols_done}/${r.symbols_total}`
+  $('t-trials').textContent = r.trials_done.toLocaleString()
+  $('t-elapsed').textContent = dur(r.elapsed_s)
+  $('t-eta').textContent = r.status === 'running' ? dur(r.eta_s) : '–'
+  $('t-errors').textContent = r.symbols_error
+  $('t-errors').className = `v ${r.symbols_error ? 'neg' : ''}`
+
+  const T = c.trials_per_symbol || 1
+  const order = { running: 0, error: 1, stopped: 2, queued: 3, done: 4 }
+  const syms = [...r.symbols].sort((a, b) => (order[a.state] - order[b.state]) || a.symbol.localeCompare(b.symbol))
+  $('symgrid').innerHTML = syms.map((s) => `<button class="sym s-${s.state} ${s.symbol === S.symbol ? 'sel' : ''}" data-sym="${esc(s.symbol)}" title="${esc(s.error || s.state)}">
+      <span class="nm">${esc(s.symbol)}</span>
+      <span class="mini"><div style="width:${Math.min(100, (s.trials / T) * 100)}%"></div></span>
+      <span class="meta">${s.state === 'error' ? 'error' : `${s.trials}/${T} · ${s.best == null ? '–' : fmt(s.best, 4)}`}</span></button>`).join('')
+
+  renderChart()
+  const log = $('tab-log')
+  const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30
+  log.textContent = r.log_tail.length ? r.log_tail.join('\n') : 'Waiting for the Terminal window to start…'
+  if (atBottom) log.scrollTop = log.scrollHeight
+  $('tab-events').textContent = r.events.length ? r.events.map((e) => JSON.stringify(e)).reverse().join('\n') : 'No events yet.'
+  $('tab-config').textContent = JSON.stringify(c, null, 2)
+  renderPipeline()
+}
+
+function renderChart() {
+  const box = $('trial-chart'), r = S.run
+  if (!S.symbol || !r?.series) { box.hidden = true; return }
+  box.hidden = false
+  const pts = r.series.filter((p) => p.value != null)
+  const bad = r.series.filter((p) => p.state && p.state !== 'complete')
+  $('chart-title').textContent = `${S.symbol}: Optuna trials`
+  const best = pts.reduce((m, p) => Math.max(m, p.value), -Infinity)
+  $('chart-meta').textContent = pts.length ? `${r.series.length} trials · best ${fmt(best, 4)}` : 'no scored trials yet'
+  const svg = $('chart-svg')
+  const W = 600, H = 170, P = 8
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`)
+  if (!pts.length) { svg.innerHTML = ''; return }
+  const xs = r.series.map((p) => p.trial)
+  const x0 = Math.min(...xs), x1 = Math.max(...xs, x0 + 1)
+  let y0 = Math.min(...pts.map((p) => p.value)), y1 = Math.max(...pts.map((p) => p.value))
+  if (y0 === y1) { y0 -= 1; y1 += 1 }
+  const X = (t) => P + ((t - x0) / (x1 - x0)) * (W - 2 * P)
+  const Y = (v) => H - P - ((v - y0) / (y1 - y0)) * (H - 2 * P)
+  let run = -Infinity
+  const line = [...pts].sort((a, b) => a.trial - b.trial).map((p) => { run = Math.max(run, p.value); return `${X(p.trial).toFixed(1)},${Y(run).toFixed(1)}` }).join(' ')
+  const zero = y0 < 0 && y1 > 0 ? `<line x1="${P}" x2="${W - P}" y1="${Y(0)}" y2="${Y(0)}" stroke="#334155" stroke-dasharray="4 4"/>` : ''
+  svg.innerHTML = zero +
+    pts.map((p) => `<circle cx="${X(p.trial).toFixed(1)}" cy="${Y(p.value).toFixed(1)}" r="2.6" fill="#64748b"/>`).join('') +
+    bad.map((p) => `<circle cx="${X(p.trial).toFixed(1)}" cy="${H - P}" r="2.6" fill="#ef4444"/>`).join('') +
+    `<polyline points="${line}" fill="none" stroke="#a78bfa" stroke-width="2" vector-effect="non-scaling-stroke"/>` +
+    `<text x="${P}" y="14" fill="#8a93a6" font-size="11">${fmt(y1, 4)}</text><text x="${P}" y="${H - 12}" fill="#8a93a6" font-size="11">${fmt(y0, 4)}</text>`
+}
+
+// ------------------------------------------------------------ pipeline
+function renderPipeline() {
+  const r = S.run, info = S.info, main = S.main || {}
+  const c = r?.config
+  const id = c?.model_id || info?.next_model_id || 'dev_signal_mlN'
+  const label = c?.label || id.replace('dev_signal_ml', 'Dev Signal ML')
+  const live = r && ['running', 'starting'].includes(r.status)
+  const failed = r && ['error', 'cancelled', 'interrupted'].includes(r.status)
+  const published = c ? c.publish : $('f-publish').checked
+  const registered = (main.models || []).includes(id)
+  const ds = c?.dataset || info?.default_dataset
+  const chartSym = S.resSym || c?.symbols?.[0] || 'RELIANCE'
+  const exch = (info?.datasets.find((d) => d.dataset === ds)?.symbols.find((s) => s.symbol === chartSym)?.exchange) || 'NSE'
+  const chartUrl = `${info?.main_frontend}/?view=chart&name=${encodeURIComponent(chartSym)}&exchange=${exch}&interval=3m&offline=${encodeURIComponent(ds)}`
+
+  const steps = [
+    {
+      t: 'Inputs saved as a run config',
+      s: r ? 'done' : 'pending',
+      p: `Your form is validated and written to <code>outputs/runs/${esc(r?.run_id || '&lt;run&gt;')}/config.json</code> with a <code>run.sh</code> launcher. The model id <code>${esc(id)}</code> is the next free number across existing models and the backend's own jobs.`,
+    },
+    {
+      t: 'New Terminal window runs the trainer',
+      s: !r ? 'pending' : r.status === 'starting' ? 'active' : r.pid ? 'done' : failed ? 'warn' : 'active',
+      p: `<code>python -m stock_terminal_ml.train …</code> runs in its own window. Every Optuna trial prints there and goes into <code>progress.jsonl</code>, which this page polls once a second.`,
+    },
+    {
+      t: 'Optuna tunes each symbol',
+      s: !r ? 'pending' : r.status === 'done' ? 'done' : failed ? 'warn' : 'active',
+      p: `For each symbol: TPE sampler, ${esc(c?.trials_per_symbol || '?')} trials. Each trial runs Dev Signal → backtest simulator (with costs) → objective over 3 expanding CV folds. Then the best params are scored once on the 30-day OOS hold-out.${r ? ` <b>${r.symbols_done}/${r.symbols_total}</b> done.` : ''}`,
+    },
+    {
+      t: published ? 'Model JSON written into the main repo' : 'Model JSON written (not published)',
+      s: !r ? 'pending' : r.artifact_exists ? 'done' : failed ? 'warn' : live ? 'pending' : 'warn',
+      p: published
+        ? `<code>${esc(info?.paths.models_dir || '')}/${esc(id)}.json</code>, with <code>per_symbol</code> params + CV/OOS metrics + a <code>global_fallback</code> (median of each knob).`
+        : `Kept in <code>outputs/runs/${esc(r?.run_id || '')}/</code>. The main app won't see it. Re-run with "Publish to main repo" checked.`,
+    },
+    {
+      t: 'Backend registry lists it',
+      s: !published ? 'pending' : registered ? 'done' : !main.backend_up ? 'warn' : r?.artifact_exists ? 'active' : 'pending',
+      p: `<code>GET ${esc(info?.main_backend || '')}/api/ml/models</code> rescans the models folder (mtime-cached), so no backend restart is needed. ${main.backend_up ? `It currently serves: <code>${esc((main.models || []).join(', ') || 'none')}</code>.` : '<b>Main backend not reachable.</b> Start it with <code>uvicorn app.main:app --reload --port 8000</code>.'}`,
+    },
+    {
+      t: `Frontend registers "${esc(label)}"`,
+      s: registered && main.frontend_up ? 'done' : registered ? 'warn' : 'pending',
+      p: `On page load, <code>main.jsx</code> fetches every model and calls <code>registerIndicator(makeDevSignalMlDef(model))</code>. Because this run started outside the app, <b>reload any open stock-terminal tab</b> to pick it up. ${main.frontend_up ? '' : '<b>Frontend not reachable</b> (<code>nvm use 20 && npm run dev</code>).'}`,
+    },
+    {
+      t: 'Use it on a chart',
+      s: registered && main.frontend_up ? 'active' : 'pending',
+      p: `Open a chart → Indicators → <b>${esc(label)}</b>. Its legend shows <i>tuned</i> vs <i>fallback</i> and the knob values used.<br><a href="${esc(chartUrl)}" target="_blank" rel="noopener">Open ${esc(chartSym)} (offline chart) ↗</a>`,
+    },
+  ]
+  const labels = { done: '✓ done', active: '● now', pending: 'waiting', warn: '! check' }
+  $('pipeline').innerHTML = steps.map((s) => `<li class="${s.s}"><span class="st">${labels[s.s]}</span><h3>${s.t}</h3><p>${s.p}</p></li>`).join('')
+}
+
+// ------------------------------------------------------------ main status
+async function loadMain() {
+  try { S.main = await api('/api/main') } catch { S.main = null }
+  const m = S.main || {}
+  const set = (id, up, text) => { const el = $(id); el.innerHTML = `<i class="dot ${up ? 'up' : 'down'}"></i>${text}`; el.title = up ? 'reachable' : 'not reachable' }
+  set('pill-backend', m.backend_up, `Backend ${S.info?.main_backend.replace('http://', '') || ''}`)
+  set('pill-frontend', m.frontend_up, `Frontend ${S.info?.main_frontend.replace('http://', '') || ''}`)
+  renderPipeline()
+}
+
+// ------------------------------------------------------------ results
+let modelsSig = ''
+async function loadModels(prefer) {
+  const models = await api('/api/models')
+  const sig = models.map((m) => `${m._ref}:${m._mtime}`).join('|')
+  if (sig === modelsSig && !prefer) return
+  modelsSig = sig
+  S.models = models
+  $('pill-models').innerHTML = `<i class="dot up"></i>${S.models.filter((m) => m._published).length} models in main repo`
+  if (prefer) { const hit = S.models.find((m) => m.id === prefer); if (hit) S.modelRef = hit._ref }
+  if (!S.models.find((m) => m._ref === S.modelRef)) S.modelRef = S.models[0]?._ref || null
+  $('model-picker').innerHTML = S.models.map((m) =>
+    `<option value="${esc(m._ref)}" ${m._ref === S.modelRef ? 'selected' : ''}>${esc(m.label)} · ${esc(m.id)}${m._published ? '' : ' (unpublished)'} · ${esc((m.created_at || '').slice(0, 16).replace('T', ' '))}</option>`).join('')
+  renderModel()
+}
+
+function model() { return S.models.find((m) => m._ref === S.modelRef) }
+
+const COLS = [
+  { key: 'symbol', label: 'Symbol', get: (r) => r.symbol },
+  { key: 'best', label: 'Best score', get: (r) => r.best_value, f: (v) => fmt(v, 4) },
+  { key: 'cv_pnl', label: 'CV net', get: (r) => r.cv?.net_pnl_pct, f: pct, c: true },
+  { key: 'cv_trades', label: 'CV trades', get: (r) => r.cv?.num_trades, f: (v) => fmt(v, 0) },
+  { key: 'cv_win', label: 'CV win', get: (r) => r.cv?.win_rate, f: (v) => (v == null ? '–' : `${fmt(v, 0)}%`) },
+  { key: 'oos_pnl', label: 'OOS net', get: (r) => r.oos?.net_pnl_pct, f: pct, c: true },
+  { key: 'oos_trades', label: 'OOS trades', get: (r) => r.oos?.num_trades, f: (v) => fmt(v, 0) },
+  { key: 'oos_win', label: 'OOS win', get: (r) => r.oos?.win_rate, f: (v) => (v == null ? '–' : `${fmt(v, 0)}%`) },
+  { key: 'oos_dd', label: 'OOS DD', get: (r) => r.oos?.max_drawdown_pct, f: (v) => (v == null ? '–' : `${fmt(v, 2)}%`) },
+  { key: 'flag', label: 'Check', get: (r) => (overfit(r) ? 1 : 0), f: (v) => (v ? '<span class="neg">overfit?</span>' : '<span class="mut">ok</span>') },
+]
+const overfit = (r) => r.cv?.net_pnl_pct > 0 && r.oos && r.oos.net_pnl_pct <= 0
+
+function renderModel() {
+  const m = model()
+  $('models-empty').hidden = !!m; $('model-view').hidden = !m
+  if (!m) return
+  const t = m.training || {}
+  const rows = Object.entries(m.per_symbol || {}).map(([symbol, v]) => ({ symbol, ...v }))
+  $('model-meta').innerHTML = [
+    ['id', m.id], ['window', `${t.window?.from} → ${t.window?.to}`], ['target / stop', `${t.target_pct}% / ${t.sl_pct}%`],
+    ['preset', `${t.preset} · ${t.trials_per_symbol} trials`], ['folds', t.folds], ['objective', t.objective],
+    ['widen', t.widen ? 'yes' : 'no'], ['dataset', t.dataset], ['created', (m.created_at || '').slice(0, 19).replace('T', ' ')],
+  ].map(([k, v]) => `<span>${k} <b>${esc(v)}</b></span>`).join('') +
+    `<span>file <b class="mono">${esc(m._file)}</b></span>`
+  const cv = rows.map((r) => r.cv?.net_pnl_pct), oos = rows.map((r) => r.oos?.net_pnl_pct).filter((v) => v != null)
+  const posOos = oos.filter((v) => v > 0).length
+  const tiles = [
+    ['Symbols tuned', `${t.symbols_succeeded ?? rows.length}/${t.symbols_total ?? rows.length}`, ''],
+    ['Median CV net', pct(median(cv)), cls(median(cv))],
+    ['Median OOS net', pct(median(oos)), cls(median(oos))],
+    ['OOS positive', oos.length ? `${Math.round((posOos / oos.length) * 100)}%` : '–', ''],
+    ['Overfit flags', rows.filter(overfit).length, rows.filter(overfit).length ? 'neg' : ''],
+  ]
+  $('model-tiles').innerHTML = tiles.map(([k, v, c]) => `<div class="tile"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`).join('')
+
+  const { key, dir } = S.sort
+  const col = COLS.find((c) => c.key === key)
+  rows.sort((a, b) => {
+    const x = col.get(a), y = col.get(b)
+    if (x == null) return 1; if (y == null) return -1
+    return (typeof x === 'string' ? x.localeCompare(y) : x - y) * dir
+  })
+  $('res-head').innerHTML = COLS.map((c) => `<th class="sort" data-k="${c.key}">${c.label}${c.key === key ? (dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')
+  if (!rows.find((r) => r.symbol === S.resSym)) S.resSym = null
+  $('res-body').innerHTML = rows.length ? rows.map((r) => `<tr class="click ${r.symbol === S.resSym ? 'sel' : ''}" data-sym="${esc(r.symbol)}">` +
+    COLS.map((c) => { const v = c.get(r); return `<td class="${c.c ? cls(v) : ''}">${c.f ? c.f(v) : esc(v)}</td>` }).join('') + '</tr>').join('')
+    : `<tr><td colspan="${COLS.length}" class="mut">No symbols succeeded.</td></tr>`
+  renderDetail()
+  const raw = JSON.stringify(Object.fromEntries(Object.entries(m).filter(([k]) => !k.startsWith('_'))), null, 2)
+  $('model-raw').textContent = raw
+  const a = $('model-download')
+  if (a.href.startsWith('blob:')) URL.revokeObjectURL(a.href)
+  a.href = URL.createObjectURL(new Blob([raw], { type: 'application/json' }))
+  a.download = `${m.id}.json`
+  renderPipeline()
+}
+
+function renderDetail() {
+  const m = model(); if (!m) return
+  const defaults = S.info.defaults
+  const row = S.resSym ? m.per_symbol[S.resSym] : null
+  const params = row ? row.params : m.global_fallback?.params || {}
+  $('detail-title').innerHTML = row
+    ? `Tuned parameters: <span style="color:var(--text)">${esc(S.resSym)}</span>`
+    : 'Global fallback (median across symbols) <span class="mut" style="font-weight:400">· used for symbols not in the run</span>'
+  $('detail-body').innerHTML = Object.entries(params).map(([k, v]) => {
+    const d = defaults[k]
+    const ch = typeof d === 'number' && d !== 0 ? ((v - d) / Math.abs(d)) * 100 : null
+    return `<tr><td class="mono">${esc(k)}</td><td class="mut">${esc(d)}</td><td><b>${Number.isInteger(v) ? v : fmt(v, 4)}</b></td><td class="${cls(ch)}">${ch == null ? '–' : pct(ch, 0)}</td></tr>`
+  }).join('') || '<tr><td colspan="4" class="mut">No params.</td></tr>'
+  let extra = ''
+  if (row) {
+    const folds = row.cv?.score_per_fold || []
+    extra += `<h4>CV score per fold</h4><div class="kv">${folds.map((s, i) => `<span>fold ${i + 1} <b class="${cls(s)}">${fmt(s, 4)}</b></span>`).join('') || '<span>–</span>'}</div>`
+    extra += row.oos
+      ? `<h4>Out-of-sample (${row.oos.trading_days} trading days)</h4><div class="kv"><span>net <b class="${cls(row.oos.net_pnl_pct)}">${pct(row.oos.net_pnl_pct)}</b></span><span>trades <b>${row.oos.num_trades}</b></span><span>win <b>${fmt(row.oos.win_rate, 0)}%</b></span><span>max DD <b>${fmt(row.oos.max_drawdown_pct)}%</b></span><span>score <b>${fmt(row.oos.score, 4)}</b></span></div>`
+      : '<h4>Out-of-sample</h4><div class="mut">No data after the training window.</div>'
+    const ds = m.training?.dataset || S.info.default_dataset
+    const exch = S.info.datasets.find((d) => d.dataset === ds)?.symbols.find((s) => s.symbol === S.resSym)?.exchange || 'NSE'
+    extra += `<p style="margin-top:10px"><a target="_blank" rel="noopener" href="${esc(S.info.main_frontend)}/?view=chart&name=${encodeURIComponent(S.resSym)}&exchange=${exch}&interval=3m&offline=${encodeURIComponent(ds)}">Open ${esc(S.resSym)} chart with ${esc(m.label)} ↗</a></p>`
+  } else {
+    extra = '<p class="mut" style="font-size:12px">Click a symbol row to see its own tuned values, fold scores and OOS metrics.</p>'
+  }
+  $('detail-extra').innerHTML = extra
+}
+
+// ------------------------------------------------------------ events
+function wire() {
+  $('f-dataset').addEventListener('change', onDataset)
+  for (const id of ['f-from', 'f-to', 'f-target', 'f-sl', 'f-trials', 'f-objective', 'f-widen', 'f-publish', 'f-jobs', 'f-label']) {
+    $(id).addEventListener('input', sync); $(id).addEventListener('change', sync)
+  }
+  $('f-publish').addEventListener('change', renderPipeline)
+  $('f-preset').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-p]'); if (!b) return
+    S.preset = b.dataset.p
+    $('f-preset').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); sync()
+  })
+  $('quick-windows').addEventListener('click', (e) => { const b = e.target.closest('button[data-m]'); if (b) { setWindow(Number(b.dataset.m)); sync() } })
+  $('sym-filter').addEventListener('input', renderSymbols)
+  $('sym-chips').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-s]'); if (!b) return
+    const s = b.dataset.s
+    S.selected.has(s) ? S.selected.delete(s) : S.selected.add(s)
+    renderSymbols(); sync()
+  })
+  $('sym-all').onclick = () => { dataset().symbols.forEach((s) => S.selected.add(s.symbol)); renderSymbols(); sync() }
+  $('sym-none').onclick = () => { S.selected.clear(); renderSymbols(); sync() }
+  $('sym-few').onclick = () => {
+    const want = ['RELIANCE', 'HDFCBANK', 'INFY', 'TCS', 'SBIN']
+    const have = dataset().symbols.map((s) => s.symbol)
+    S.selected = new Set(want.filter((s) => have.includes(s)))
+    if (!S.selected.size) have.slice(0, 5).forEach((s) => S.selected.add(s))
+    renderSymbols(); sync()
+  }
+  $('start').onclick = startRun
+  $('stop').onclick = async () => {
+    if (!confirm('Stop this training run? The Terminal process will be terminated and no model is written.')) return
+    try { S.run = await api(`/api/runs/${S.runId}/stop`, { method: 'POST' }); renderRun(); loadRuns() } catch (e) { alert(e.message) }
+  }
+  $('run-picker').addEventListener('change', (e) => { S.runId = e.target.value; S.symbol = null; S.wasRunning = false; pollRun() })
+  $('symgrid').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-sym]'); if (!b) return
+    S.symbol = S.symbol === b.dataset.sym ? null : b.dataset.sym; pollRun()
+  })
+  document.querySelector('.tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-tab]'); if (!b) return
+    S.tab = b.dataset.tab
+    document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('on', x === b))
+    for (const t of ['log', 'events', 'config']) $(`tab-${t}`).hidden = t !== S.tab
+  })
+  $('model-picker').addEventListener('change', (e) => { S.modelRef = e.target.value; S.resSym = null; renderModel() })
+  $('res-head').addEventListener('click', (e) => {
+    const th = e.target.closest('th[data-k]'); if (!th) return
+    S.sort = { key: th.dataset.k, dir: S.sort.key === th.dataset.k ? -S.sort.dir : th.dataset.k === 'symbol' ? 1 : -1 }
+    renderModel()
+  })
+  $('res-body').addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-sym]'); if (!tr) return
+    S.resSym = S.resSym === tr.dataset.sym ? null : tr.dataset.sym
+    document.querySelectorAll('#res-body tr').forEach((x) => x.classList.toggle('sel', x.dataset.sym === S.resSym))
+    renderDetail(); renderPipeline()
+  })
+}
+
+async function boot() {
+  wire()
+  try {
+    S.info = await api('/api/info')
+  } catch (e) {
+    document.querySelector('main').innerHTML = `<div class="err">Could not reach the dashboard server: ${esc(e.message)}. Start it with <code>.venv/bin/python -m stock_terminal_ml.dashboard</code>.</div>`
+    return
+  }
+  if (!S.info.datasets.length) {
+    $('inputs').insertAdjacentHTML('beforeend', '<div class="err">No offline datasets found. Run <code>python -m app.integrations.offline.fetch</code> in the main backend first.</div>')
+  } else renderInputs()
+  await Promise.all([loadRuns(), loadModels(), loadMain()])
+  if (S.runs.length) {
+    S.runId = S.runs[0].run_id
+    S.wasRunning = ['running', 'starting'].includes(S.runs[0].status)
+    pollRun()
+  }
+  renderPipeline()
+  setInterval(loadMain, 5000)
+  setInterval(() => { if (!['running', 'starting'].includes(S.run?.status)) loadModels() }, 15000)
+}
+boot()
+</script>
+</body>
+</html>
