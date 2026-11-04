@@ -1,0 +1,24 @@
+[project]
+name = "stock-terminal-ml"
+version = "0.1.0"
+description = "Optuna-based Dev Signal parameter tuner for stock-terminal."
+requires-python = ">=3.11"
+dependencies = [
+    "optuna>=3.6",
+    "stock-terminal-backend",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["stock_terminal_ml*"]
+
+# uv editable path dep on the backend (so `from app...` works in-process).
+# Install with:  uv sync       — or the plain-pip fallback in the README.
+[tool.uv.sources]
+stock-terminal-backend = { path = "../stock-terminal/backend", editable = true }
