@@ -51,6 +51,17 @@
   .check { display: flex; align-items: center; gap: 8px; font-size: 13px; min-height: 36px; cursor: pointer; }
   .hint { font-size: 12px; color: var(--dim); margin-top: -4px; margin-bottom: 10px; }
   .hint.warn { color: var(--warn); }
+  .databox { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2); padding: 10px 12px 2px; margin-bottom: 12px; }
+  .databox .total { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
+  .databox .total b { color: var(--text); }
+  .split { margin: 2px 0 10px; }
+  .split .lane { display: grid; grid-template-columns: 22px 1fr; align-items: center; gap: 6px; margin: 3px 0; font-size: 11px; color: var(--dim); }
+  .split .track { position: relative; height: 10px; border-radius: 3px; background: var(--bg); overflow: hidden; }
+  .split .seg-tr, .split .seg-te { position: absolute; top: 0; bottom: 0; }
+  .split .seg-tr { background: rgba(139,92,246,.55); }
+  .split .seg-te { background: var(--up); }
+  .split .legend { display: flex; gap: 14px; font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  .split .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
   button { min-height: 40px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line);
     background: var(--panel-2); color: var(--text); font: inherit; cursor: pointer; }
   button:hover:not(:disabled) { border-color: var(--accent); }
@@ -156,17 +167,36 @@
       <h2><span class="n">1</span>Inputs</h2>
       <p class="sub">What the trainer will tune. Optuna searches Dev Signal's knobs per symbol on the offline candles, scored by the backtest simulator.</p>
 
+      <label class="f" style="margin-bottom:6px">Mode</label>
+      <div class="seg" id="f-mode" style="margin-bottom:12px">
+        <button type="button" data-mode="params" class="on">Params<small>v1 · Optuna tunes Dev Signal knobs per symbol</small></button>
+        <button type="button" data-mode="meta">Meta<small>v2 · LightGBM filters Dev Signal fires</small></button>
+      </div>
+
       <div class="row">
         <label class="f">Dataset<select id="f-dataset"></select></label>
         <label class="f">Model name (optional)<input id="f-label" maxlength="60" placeholder="Dev Signal ML1"></label>
       </div>
 
-      <div class="row">
-        <label class="f">Train from<input type="date" id="f-from"></label>
-        <label class="f">Train to<input type="date" id="f-to"></label>
+      <label class="f" style="margin-bottom:6px">Data &amp; split</label>
+      <div class="databox">
+        <div class="total" id="data-total"></div>
+        <div class="row">
+          <label class="f"><span id="l-from">Train from</span><input type="date" id="f-from"></label>
+          <label class="f"><span id="l-to">Train to</span><input type="date" id="f-to"></label>
+        </div>
+        <div class="bar-actions" id="quick-windows"></div>
+        <div class="hint" id="window-hint"></div>
+        <div id="meta-split" hidden>
+          <div class="row three">
+            <label class="f">Train months<input type="number" id="f-train-months" min="1" max="24" value="3"></label>
+            <label class="f">Test months<input type="number" id="f-test-months" min="1" max="12" value="1"></label>
+            <label class="f">Embargo days<input type="number" id="f-embargo-days" min="0" max="10" value="1"></label>
+          </div>
+          <div class="split" id="split-preview"></div>
+          <div class="hint" id="split-hint"></div>
+        </div>
       </div>
-      <div class="bar-actions" id="quick-windows"></div>
-      <div class="hint" id="window-hint"></div>
 
       <div class="row three">
         <label class="f">Target %<input type="number" id="f-target" step="0.1" min="0.1" value="1.0"></label>
@@ -174,17 +204,27 @@
         <label class="f">Workers<input type="number" id="f-jobs" min="0" placeholder="auto"></label>
       </div>
 
-      <label class="f" style="margin-bottom:6px">Search preset</label>
-      <div class="seg" id="f-preset" style="margin-bottom:12px"></div>
+      <div id="params-fields">
+        <label class="f" style="margin-bottom:6px">Search preset</label>
+        <div class="seg" id="f-preset" style="margin-bottom:12px"></div>
+      </div>
+
+      <div id="meta-fields" hidden>
+        <div class="row">
+          <label class="f">Threshold objective<select id="f-threshold-objective"></select></label>
+          <label class="check"><input type="checkbox" id="f-calibrate" checked> Calibrate probabilities</label>
+        </div>
+        <div class="hint">One pooled LightGBM model scores every Dev Signal fire; fires below the chosen threshold are dropped.</div>
+      </div>
 
       <div class="row">
-        <label class="f">Trials / symbol (override)<input type="number" id="f-trials" min="1" max="2000" placeholder="preset"></label>
+        <label class="f" id="trials-field">Trials / symbol (override)<input type="number" id="f-trials" min="1" max="2000" placeholder="preset"></label>
         <label class="f">Objective<select id="f-objective"></select></label>
       </div>
       <div class="hint" id="objective-hint"></div>
 
       <div class="row">
-        <label class="check"><input type="checkbox" id="f-widen"> Widen search (+4 knobs)</label>
+        <label class="check" id="widen-field"><input type="checkbox" id="f-widen"> Widen search (+4 knobs)</label>
         <label class="check"><input type="checkbox" id="f-publish" checked> Publish to main repo</label>
       </div>
 
@@ -197,7 +237,7 @@
       </div>
       <div class="chips" id="sym-chips"></div>
 
-      <details style="margin-top:12px">
+      <details style="margin-top:12px" id="space-details">
         <summary>Search space: what Optuna tunes</summary>
         <div class="scroll" style="margin-top:8px;max-height:none">
           <table><thead><tr><th>Knob</th><th>Default</th><th>Range</th><th>Scale</th><th>Tuned</th></tr></thead>
@@ -232,17 +272,24 @@
         <div class="mut" style="font-size:12px;margin-top:4px" id="run-bar-text"></div>
         <div class="tiles">
           <div class="tile"><div class="k">Symbols</div><div class="v" id="t-symbols">–</div></div>
-          <div class="tile"><div class="k">Trials</div><div class="v" id="t-trials">–</div></div>
+          <div class="tile"><div class="k" id="t-trials-k">Trials</div><div class="v" id="t-trials">–</div></div>
           <div class="tile"><div class="k">Elapsed</div><div class="v" id="t-elapsed">–</div></div>
           <div class="tile"><div class="k">ETA</div><div class="v" id="t-eta">–</div></div>
           <div class="tile"><div class="k">Errors</div><div class="v" id="t-errors">–</div></div>
         </div>
-        <h4>Per-symbol studies <span class="mut" style="font-weight:400">· click one to see its trials</span></h4>
+        <h4 id="symgrid-title">Per-symbol studies <span class="mut" style="font-weight:400">· click one to see its trials</span></h4>
         <div class="symgrid" id="symgrid"></div>
         <div class="chart" id="trial-chart" hidden>
           <div class="head-line" style="margin:0 0 4px"><b id="chart-title" style="font-size:12.5px"></b><span class="mut" style="font-size:11.5px" id="chart-meta"></span></div>
           <svg id="chart-svg" preserveAspectRatio="none"></svg>
           <div class="legend"><span><i style="background:#64748b"></i>trial score</span><span><i style="background:#a78bfa"></i>best so far</span><span><i style="background:#ef4444"></i>pruned / failed</span></div>
+        </div>
+        <div id="fold-box" hidden>
+          <h4>Walk-forward folds <span class="mut" style="font-weight:400">· out-of-sample, as each one finishes</span></h4>
+          <div class="scroll"><table>
+            <thead><tr><th>#</th><th>Train</th><th>Test</th><th>Train fires</th><th>Test fires</th><th>PR-AUC</th><th>Baseline net</th></tr></thead>
+            <tbody id="fold-body"></tbody>
+          </table></div>
         </div>
         <div class="tabs">
           <button class="small on" data-tab="log">Terminal output</button>
@@ -261,7 +308,13 @@
     <h2><span class="n">3</span>How a run becomes a chart indicator in stock-terminal</h2>
     <p class="sub">Each step updates live for the selected run. Nothing in the main repo's code changes. The trained model is a JSON file that the backend and frontend pick up.</p>
     <ol class="pipe" id="pipeline"></ol>
-    <div class="note" style="margin-top:12px">
+    <div class="note" id="note-meta" style="margin-top:12px" hidden>
+      <b>Which signals does the chart show?</b> In <code>devSignalMlV2Def.js</code> the indicator sends the visible range to
+      <code>POST /api/ml/score</code>. The backend runs Dev Signal with the model's primary params, scores every fire with the
+      LightGBM model (same feature code as training), and returns only fires at or above the threshold. Each marker is labelled
+      with its P(profit). The model only scores the timeframe it was trained on (3m); other intervals show the reason in the legend.
+    </div>
+    <div class="note" id="note-params" style="margin-top:12px">
       <b>Which parameters does the chart use?</b> In <code>devSignalMlDef.js</code> the indicator looks up
       <code>per_symbol[&lt;chart symbol&gt;].params</code> first. If the symbol wasn't trained, it uses <code>global_fallback.params</code>
       (the median of each knob across symbols). If neither exists, it draws no markers and the legend says
@@ -284,7 +337,7 @@
       <div class="tiles" id="model-tiles"></div>
       <div class="twocol">
         <div>
-          <h4>Per symbol: cross-validation (in window) vs out-of-sample (30 trading days after it) <span class="mut" style="font-weight:400">· click a row</span></h4>
+          <h4 id="res-title">Per symbol: cross-validation (in window) vs out-of-sample (30 trading days after it) <span class="mut" style="font-weight:400">· click a row</span></h4>
           <div class="scroll"><table>
             <thead><tr id="res-head"></tr></thead>
             <tbody id="res-body"></tbody>
@@ -293,7 +346,7 @@
         <div>
           <h4 id="detail-title">Tuned parameters</h4>
           <div class="scroll" style="max-height:none"><table>
-            <thead><tr><th>Knob</th><th>Default</th><th>Tuned</th><th>Change</th></tr></thead>
+            <thead><tr id="detail-head"><th>Knob</th><th>Default</th><th>Tuned</th><th>Change</th></tr></thead>
             <tbody id="detail-body"></tbody>
           </table></div>
           <div id="detail-extra"></div>
@@ -335,19 +388,31 @@ async function api(path, opts = {}) {
 const S = {
   info: null, main: null, runs: [], run: null, runId: null, symbol: null, tab: 'log',
   models: [], modelRef: null, resSym: null, sort: { key: 'oos_pnl', dir: -1 },
-  preset: 'fast', selected: new Set(), wasRunning: false,
+  preset: 'fast', mode: 'params', selected: new Set(), wasRunning: false,
 }
 
 // ------------------------------------------------------------ inputs
 function dataset() { return S.info.datasets.find((d) => d.dataset === $('f-dataset').value) || S.info.datasets[0] }
 // ~30 trading days ≈ 45 calendar days must remain after "to" for the OOS hold-out.
 function oosSafeTo(ds) { return addDays(ds.to, -45) }
+// Meta walk-forward counts trading days, not calendar days. Mirrors meta/cv.py.
+const DPM = 21 // DAYS_PER_MONTH in meta/cv.py
+const tdays = (ds, from, to) => (ds.trading_days || []).filter((d) => d >= from && d <= to)
+function walkForward(n, T, V, E) { // expanding mode; indices into the window's day list, hi exclusive
+  const tr = T * DPM, te = V * DPM, out = []
+  let start = tr
+  while (start + te <= n) { out.push({ trHi: Math.max(0, start - E), teLo: start, teHi: start + te }); start += te }
+  if (start < n && n - start >= 5) out.push({ trHi: Math.max(0, start - E), teLo: start, teHi: n })
+  return out.filter((f) => f.trHi > 0 && f.teHi > f.teLo)
+}
+const months = (n) => (n / DPM).toFixed(1)
 
 function renderInputs() {
   const info = S.info
   $('f-dataset').innerHTML = info.datasets.map((d) =>
     `<option value="${esc(d.dataset)}" ${d.dataset === info.default_dataset ? 'selected' : ''}>${esc(d.title || d.dataset)} (${d.symbols.length})</option>`).join('')
   $('f-objective').innerHTML = info.objectives.map((o) => `<option value="${esc(o.name)}">${esc(o.name)}</option>`).join('')
+  $('f-threshold-objective').innerHTML = $('f-objective').innerHTML
   $('f-preset').innerHTML = Object.entries(info.presets).map(([k, p]) =>
     `<button type="button" data-p="${k}" class="${k === S.preset ? 'on' : ''}">${k[0].toUpperCase() + k.slice(1)}<small>${p.trials} trials${p.pruner ? ' · pruner' : ''}</small></button>`).join('')
   $('f-jobs').placeholder = `auto (${Math.max(1, info.cpu_count - 1)})`
@@ -361,20 +426,62 @@ function renderInputs() {
 function onDataset() {
   const ds = dataset()
   S.selected = new Set(ds.symbols.filter((s) => s.kind !== 'index').map((s) => s.symbol))
-  setWindow(3)
-  $('quick-windows').innerHTML = [2, 3, 4, 6].map((m) => `<button class="small" data-m="${m}">Last ${m}M</button>`).join('') +
-    `<span class="mut" style="font-size:12px">data ${ds.from} → ${ds.to}</span>`
+  onModeWindow()
   renderSymbols()
   sync()
 }
 
-function setWindow(months) {
+// Params mode holds back ~30 trading days after "to" for OOS, so its presets end early.
+// Meta mode tests inside the window (walk-forward), so it defaults to all data.
+function onModeWindow() {
+  const meta = S.mode === 'meta'
+  $('l-from').textContent = meta ? 'Window from' : 'Train from'
+  $('l-to').textContent = meta ? 'Window to' : 'Train to'
+  $('quick-windows').innerHTML = (meta ? [0, 4, 6, 8] : [2, 3, 4, 6])
+    .map((m) => `<button class="small" data-m="${m}">${m ? `Last ${m}M` : 'All data'}</button>`).join('')
+  setWindow(meta ? 0 : 3)
+}
+
+function setWindow(months) { // 0 = all data
   const ds = dataset()
-  const to = oosSafeTo(ds)
-  let from = addMonths(to, -months)
-  if (from < ds.from) from = addDays(ds.from, 3)
+  const to = S.mode === 'meta' ? ds.to : oosSafeTo(ds)
+  let from = months ? addMonths(to, -months) : ds.from
+  if (from < ds.from) from = S.mode === 'meta' ? ds.from : addDays(ds.from, 3)
   $('f-from').value = from
   $('f-to').value = to
+}
+
+function renderSplit(b, ds) {
+  const all = ds.trading_days || []
+  const days = tdays(ds, b.from, b.to), n = days.length
+  $('data-total').innerHTML = all.length
+    ? `Dataset <b>${esc(all[0])} → ${esc(all[all.length - 1])}</b> · <b>${all.length}</b> trading days (≈${months(all.length)} months)` +
+      ` · selected window <b>${n}</b> days (≈${months(n)} m)`
+    : `Dataset <b>${esc(ds.from)} → ${esc(ds.to)}</b> · trading-day calendar unavailable`
+  S.noFolds = false
+  if (b.mode !== 'meta' || !all.length) { $('split-preview').innerHTML = ''; $('split-hint').textContent = ''; return }
+  const T = b.train_months, V = b.test_months, E = b.embargo_days
+  const folds = walkForward(n, T, V, E)
+  const maxT = Math.floor((n - 5) / DPM)
+  $('f-train-months').max = Math.max(1, Math.min(24, maxT))
+  const hint = $('split-hint')
+  if (!folds.length) {
+    S.noFolds = true
+    $('split-preview').innerHTML = ''
+    hint.className = 'hint warn'
+    hint.textContent = `Not enough data: the window has ${n} trading days. ${T}m train = ${T * DPM} days, plus at least 5 test days = ${T * DPM + 5} needed. ` +
+      (maxT >= 1 ? `Lower train months to ${maxT} or less, or ` : '') + `widen the window (All data = ${all.length} days).`
+    return
+  }
+  const w = (a, z) => `left:${(a / n) * 100}%;width:${((z - a) / n) * 100}%`
+  const tested = folds.reduce((t, f) => t + f.teHi - f.teLo, 0)
+  $('split-preview').innerHTML = folds.map((f, i) =>
+    `<div class="lane" title="train ${days[0]} → ${days[f.trHi - 1]} (${f.trHi}d) · test ${days[f.teLo]} → ${days[f.teHi - 1]} (${f.teHi - f.teLo}d)">` +
+    `<span>#${i}</span><div class="track"><div class="seg-tr" style="${w(0, f.trHi)}"></div><div class="seg-te" style="${w(f.teLo, f.teHi)}"></div></div></div>`).join('') +
+    `<div class="legend"><span><i style="background:rgba(139,92,246,.55)"></i>train</span><span><i style="background:var(--up)"></i>test (out-of-sample)</span><span>${esc(days[0])} → ${esc(days[n - 1])}</span></div>`
+  hint.className = 'hint'
+  hint.textContent = `${folds.length} fold${folds.length > 1 ? 's' : ''}: the first trains on ${folds[0].trHi} days, later folds also train on earlier test blocks (expanding), with ${E} embargo day${E === 1 ? '' : 's'} at each seam. ` +
+    `${tested} of ${n} days (${Math.round((tested / n) * 100)}%) are scored out-of-sample; the first ${T * DPM} are train-only. The final model is fit on all ${n}. Hover a bar for dates.`
 }
 
 function renderSymbols() {
@@ -391,7 +498,12 @@ function formBody() {
     target_pct: Number($('f-target').value), sl_pct: Number($('f-sl').value),
     preset: S.preset, trials: $('f-trials').value || null, objective: $('f-objective').value,
     widen: $('f-widen').checked, publish: $('f-publish').checked, jobs: Number($('f-jobs').value || 0),
-    label: $('f-label').value.trim(), symbols: [...S.selected],
+    label: $('f-label').value.trim(), symbols: [...S.selected], mode: S.mode,
+    ...(S.mode === 'meta' ? {
+      train_months: Number($('f-train-months').value || 3), test_months: Number($('f-test-months').value || 1),
+      embargo_days: Number($('f-embargo-days').value || 0), calibrate: $('f-calibrate').checked,
+      threshold_objective: $('f-threshold-objective').value, model_family: 'lightgbm',
+    } : {}),
   }
 }
 
@@ -406,21 +518,31 @@ function sync() {
   const out = b.publish ? `${info.paths.models_dir}/${id}.json` : `${info.paths.runs_dir}/<run>/${id}.json`
   const all = b.symbols.length === ds.symbols.length
   const q = (s) => (/[^\w@%+=:,./-]/.test(s) ? `'${s.replace(/'/g, "'\\''")}'` : s)
-  const parts = ['.venv/bin/python -m stock_terminal_ml.train', `--window ${b.from}:${b.to}`, `--target-pct ${b.target_pct}`, `--sl-pct ${b.sl_pct}`,
-    `--preset ${b.preset}`, `--dataset ${b.dataset}`, `--objective ${b.objective}`, `--model-id ${id}`, `--label ${q(b.label || $('f-label').placeholder)}`,
+  const meta = b.mode === 'meta'
+  for (const el of ['params-fields', 'trials-field', 'widen-field', 'space-details']) $(el).hidden = meta
+  $('meta-fields').hidden = !meta
+  const parts = [meta ? '.venv/bin/python -m stock_terminal_ml.train_meta --mode meta' : '.venv/bin/python -m stock_terminal_ml.train',
+    `--window ${b.from}:${b.to}`, `--target-pct ${b.target_pct}`, `--sl-pct ${b.sl_pct}`,
+    ...(meta ? [] : [`--preset ${b.preset}`]), `--dataset ${b.dataset}`, `--objective ${b.objective}`, `--model-id ${id}`, `--label ${q(b.label || $('f-label').placeholder)}`,
     `--output ${q(out)}`, `--progress outputs/runs/<run>/progress.jsonl`, `--jobs ${b.jobs}`]
-  if (b.trials) parts.push(`--trials ${b.trials}`)
+  if (meta) parts.push(`--train-months ${b.train_months}`, `--test-months ${b.test_months}`, `--embargo-days ${b.embargo_days}`,
+    '--model-family lightgbm', b.calibrate ? '--calibrate' : '--no-calibrate', `--threshold-objective ${b.threshold_objective}`)
+  if (b.trials && !meta) parts.push(`--trials ${b.trials}`)
   if (!all) parts.push(`--symbols ${q(b.symbols.join(','))}`)
-  if (b.widen) parts.push('--widen')
+  if (b.widen && !meta) parts.push('--widen')
   $('cmd-preview').textContent = parts.join(' \\\n    ')
   const total = trials * b.symbols.length
   const workers = b.jobs || Math.max(1, info.cpu_count - 1)
-  $('estimate').innerHTML = `<b>${b.symbols.length}</b> symbols × <b>${trials}</b> trials = <b>${total.toLocaleString()}</b> backtest trials (each scored over 3 CV folds) on <b>${workers}</b> worker${workers > 1 ? 's' : ''}. Output → <code>${esc(id)}.json</code>${b.publish ? ' in the main repo' : ' (kept in this repo, not published)'}.`
+  if (meta) $('estimate').innerHTML = `One pooled LightGBM model over the Dev Signal fires of <b>${b.symbols.length}</b> symbols, walk-forward ${b.train_months}m train / ${b.test_months}m test, ${b.embargo_days}-day embargo. Output → <code>${esc(id)}.json</code>${b.publish ? ' in the main repo' : ' (kept in this repo, not published)'}.`
+  else $('estimate').innerHTML = `<b>${b.symbols.length}</b> symbols × <b>${trials}</b> trials = <b>${total.toLocaleString()}</b> backtest trials (each scored over 3 CV folds) on <b>${workers}</b> worker${workers > 1 ? 's' : ''}. Output → <code>${esc(id)}.json</code>${b.publish ? ' in the main repo' : ' (kept in this repo, not published)'}.`
   const hint = $('window-hint')
   const safe = oosSafeTo(ds)
   if (b.to > safe) { hint.className = 'hint warn'; hint.textContent = `"To" is after ${safe}, so fewer than ~30 trading days remain for the out-of-sample check. OOS results will be thin or missing.` }
   else { hint.className = 'hint'; hint.textContent = `Out-of-sample hold-out: the ~30 trading days after ${b.to}. These are never seen during the search.` }
-  $('start').disabled = !b.symbols.length || !b.from || !b.to || S.run?.status === 'running'
+  if (meta) { hint.className = 'hint'; hint.textContent = 'Meta tests inside the window (walk-forward below), so no hold-out is needed after "to". Use as much data as you have.' }
+  $('meta-split').hidden = !meta
+  renderSplit(b, ds)
+  $('start').disabled = !b.symbols.length || !b.from || !b.to || S.run?.status === 'running' || (meta && S.noFolds)
 }
 
 // ------------------------------------------------------------ runs
@@ -475,13 +597,17 @@ function renderRun() {
   $('run-status').className = `badge b-${r.status}`
   $('run-status').textContent = r.status
   $('stop').hidden = r.status !== 'running'
-  const p = r.trials_total ? (r.trials_done / r.trials_total) * 100 : 0
+  const isMeta = r.mode === 'meta'
+  const p = isMeta ? (r.stage?.pct || 0) * 100 : (r.trials_total ? (r.trials_done / r.trials_total) * 100 : 0)
   $('run-bar').style.width = `${r.status === 'done' ? 100 : p}%`
   $('run-bar-text').textContent = r.status === 'done'
-    ? `Finished: ${r.symbols_done}/${r.symbols_total} symbols tuned`
-    : `${p.toFixed(1)}% · ${r.trials_done.toLocaleString()} of ${r.trials_total.toLocaleString()} trials`
+    ? (isMeta ? `Finished: ${r.folds.length} walk-forward folds` : `Finished: ${r.symbols_done}/${r.symbols_total} symbols tuned`)
+    : isMeta
+      ? `${p.toFixed(0)}% · stage ${r.stage?.name || 'starting'} · ${r.folds.length} folds done`
+      : `${p.toFixed(1)}% · ${r.trials_done.toLocaleString()} of ${r.trials_total.toLocaleString()} trials`
   $('t-symbols').textContent = `${r.symbols_done}/${r.symbols_total}`
-  $('t-trials').textContent = r.trials_done.toLocaleString()
+  $('t-trials-k').textContent = isMeta ? 'Folds' : 'Trials'
+  $('t-trials').textContent = isMeta ? r.folds.length : r.trials_done.toLocaleString()
   $('t-elapsed').textContent = dur(r.elapsed_s)
   $('t-eta').textContent = r.status === 'running' ? dur(r.eta_s) : '–'
   $('t-errors').textContent = r.symbols_error
@@ -493,9 +619,21 @@ function renderRun() {
   $('symgrid').innerHTML = syms.map((s) => `<button class="sym s-${s.state} ${s.symbol === S.symbol ? 'sel' : ''}" data-sym="${esc(s.symbol)}" title="${esc(s.error || s.state)}">
       <span class="nm">${esc(s.symbol)}</span>
       <span class="mini"><div style="width:${Math.min(100, (s.trials / T) * 100)}%"></div></span>
-      <span class="meta">${s.state === 'error' ? 'error' : `${s.trials}/${T} · ${s.best == null ? '–' : fmt(s.best, 4)}`}</span></button>`).join('')
+      <span class="meta">${s.state === 'error' ? 'error' : isMeta ? (s.state === 'done' ? 'in model' : 'pooled') : `${s.trials}/${T} · ${s.best == null ? '–' : fmt(s.best, 4)}`}</span></button>`).join('')
+  $('symgrid-title').innerHTML = isMeta
+    ? 'Symbols <span class="mut" style="font-weight:400">· pooled into one model; fires from all of them train it together</span>'
+    : 'Per-symbol studies <span class="mut" style="font-weight:400">· click one to see its trials</span>'
+  $('fold-box').hidden = !isMeta
+  if (isMeta) {
+    $('fold-body').innerHTML = r.folds.length ? r.folds.map((f) => {
+      const m = f.metrics || {}, b = m.baseline_net_pnl_pct
+      return `<tr><td>${f.index}</td><td class="mono">${esc(f.train_from)} → ${esc(f.train_to)}</td><td class="mono">${esc(f.test_from)} → ${esc(f.test_to)}</td>` +
+        `<td>${fmt(m.num_train, 0)}</td><td>${fmt(m.num_test, 0)}</td><td>${fmt(m.pr_auc, 3)}</td><td class="${cls(b)}">${pct(b)}</td></tr>`
+    }).join('') : `<tr><td colspan="7" class="mut">${r.stage?.name === 'features' ? 'Building features for every Dev Signal fire…' : 'No folds finished yet.'}</td></tr>`
+  }
 
-  renderChart()
+  if (isMeta) $('trial-chart').hidden = true
+  else renderChart()
   const log = $('tab-log')
   const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30
   log.textContent = r.log_tail.length ? r.log_tail.join('\n') : 'Waiting for the Terminal window to start…'
@@ -547,6 +685,7 @@ function renderPipeline() {
   const ds = c?.dataset || info?.default_dataset
   const chartSym = S.resSym || c?.symbols?.[0] || 'RELIANCE'
   const exch = (info?.datasets.find((d) => d.dataset === ds)?.symbols.find((s) => s.symbol === chartSym)?.exchange) || 'NSE'
+  const meta = c ? c.mode === 'meta' : S.mode === 'meta'
   const chartUrl = `${info?.main_frontend}/?view=chart&name=${encodeURIComponent(chartSym)}&exchange=${exch}&interval=3m&offline=${encodeURIComponent(ds)}`
 
   const steps = [
@@ -558,9 +697,15 @@ function renderPipeline() {
     {
       t: 'New Terminal window runs the trainer',
       s: !r ? 'pending' : r.status === 'starting' ? 'active' : r.pid ? 'done' : failed ? 'warn' : 'active',
-      p: `<code>python -m stock_terminal_ml.train …</code> runs in its own window. Every Optuna trial prints there and goes into <code>progress.jsonl</code>, which this page polls once a second.`,
+      p: meta
+        ? `<code>python -m stock_terminal_ml.train_meta --mode meta …</code> runs in its own window. Each stage and walk-forward fold goes into <code>progress.jsonl</code>, which this page polls once a second.`
+        : `<code>python -m stock_terminal_ml.train …</code> runs in its own window. Every Optuna trial prints there and goes into <code>progress.jsonl</code>, which this page polls once a second.`,
     },
-    {
+    meta ? {
+      t: 'LightGBM learns which Dev Signal fires to keep',
+      s: !r ? 'pending' : r.status === 'done' ? 'done' : failed ? 'warn' : 'active',
+      p: `Every Dev Signal fire on the selected symbols is labeled by the backtest simulator (did it hit target before stop?) and turned into features. Walk-forward: train on ${esc(c?.train_months ?? $('f-train-months').value)}m, test on the next ${esc(c?.test_months ?? $('f-test-months').value)}m, roll forward. The decision threshold is picked on the OOS folds, then a final model is fit on the whole window.${r ? ` <b>${r.folds.length}</b> folds done.` : ''}`,
+    } : {
       t: 'Optuna tunes each symbol',
       s: !r ? 'pending' : r.status === 'done' ? 'done' : failed ? 'warn' : 'active',
       p: `For each symbol: TPE sampler, ${esc(c?.trials_per_symbol || '?')} trials. Each trial runs Dev Signal → backtest simulator (with costs) → objective over 3 expanding CV folds. Then the best params are scored once on the 30-day OOS hold-out.${r ? ` <b>${r.symbols_done}/${r.symbols_total}</b> done.` : ''}`,
@@ -569,7 +714,9 @@ function renderPipeline() {
       t: published ? 'Model JSON written into the main repo' : 'Model JSON written (not published)',
       s: !r ? 'pending' : r.artifact_exists ? 'done' : failed ? 'warn' : live ? 'pending' : 'warn',
       p: published
-        ? `<code>${esc(info?.paths.models_dir || '')}/${esc(id)}.json</code>, with <code>per_symbol</code> params + CV/OOS metrics + a <code>global_fallback</code> (median of each knob).`
+        ? (meta
+          ? `<code>${esc(info?.paths.models_dir || '')}/${esc(id)}.json</code> (v2, <code>kind: meta_labeling</code>), with the LightGBM booster, calibration, threshold, feature list and per-fold OOS evaluation.`
+          : `<code>${esc(info?.paths.models_dir || '')}/${esc(id)}.json</code>, with <code>per_symbol</code> params + CV/OOS metrics + a <code>global_fallback</code> (median of each knob).`)
         : `Kept in <code>outputs/runs/${esc(r?.run_id || '')}/</code>. The main app won't see it. Re-run with "Publish to main repo" checked.`,
     },
     {
@@ -580,15 +727,18 @@ function renderPipeline() {
     {
       t: `Frontend registers "${esc(label)}"`,
       s: registered && main.frontend_up ? 'done' : registered ? 'warn' : 'pending',
-      p: `On page load, <code>main.jsx</code> fetches every model and calls <code>registerIndicator(makeDevSignalMlDef(model))</code>. Because this run started outside the app, <b>reload any open stock-terminal tab</b> to pick it up. ${main.frontend_up ? '' : '<b>Frontend not reachable</b> (<code>nvm use 20 && npm run dev</code>).'}`,
+      p: `On page load, <code>main.jsx</code> fetches every model and calls <code>registerIndicator(${meta ? 'makeDevSignalMlV2Def' : 'makeDevSignalMlDef'}(model))</code>. Because this run started outside the app, <b>reload any open stock-terminal tab</b> to pick it up. ${main.frontend_up ? '' : '<b>Frontend not reachable</b> (<code>nvm use 20 && npm run dev</code>).'}`,
     },
     {
       t: 'Use it on a chart',
       s: registered && main.frontend_up ? 'active' : 'pending',
-      p: `Open a chart → Indicators → <b>${esc(label)}</b>. Its legend shows <i>tuned</i> vs <i>fallback</i> and the knob values used.<br><a href="${esc(chartUrl)}" target="_blank" rel="noopener">Open ${esc(chartSym)} (offline chart) ↗</a>`,
+      p: `Open a chart → Indicators → <b>${esc(label)}</b>. ${meta
+        ? `The chart asks <code>POST /api/ml/score</code> for the fires the model keeps; each marker shows its P(profit) and the legend shows <i>kept/total</i> fires. Use the <b>3m</b> interval the model was trained on.`
+        : 'Its legend shows <i>tuned</i> vs <i>fallback</i> and the knob values used.'}<br><a href="${esc(chartUrl)}" target="_blank" rel="noopener">Open ${esc(chartSym)} (offline chart) ↗</a>`,
     },
   ]
   const labels = { done: '✓ done', active: '● now', pending: 'waiting', warn: '! check' }
+  $('note-meta').hidden = !meta; $('note-params').hidden = meta
   $('pipeline').innerHTML = steps.map((s) => `<li class="${s.s}"><span class="st">${labels[s.s]}</span><h3>${s.t}</h3><p>${s.p}</p></li>`).join('')
 }
 
@@ -638,6 +788,71 @@ function renderModel() {
   const m = model()
   $('models-empty').hidden = !!m; $('model-view').hidden = !m
   if (!m) return
+  if (String(m.version) === '2') renderModelV2(m)
+  else renderModelV1(m)
+  const raw = JSON.stringify(Object.fromEntries(Object.entries(m).filter(([k]) => !k.startsWith('_'))), null, 2)
+  $('model-raw').textContent = raw
+  const a = $('model-download')
+  if (a.href.startsWith('blob:')) URL.revokeObjectURL(a.href)
+  a.href = URL.createObjectURL(new Blob([raw], { type: 'application/json' }))
+  a.download = `${m.id}.json`
+  renderPipeline()
+}
+
+// v2 (meta-labeling): OOS walk-forward folds, baseline (raw Dev Signal) vs ML-filtered.
+const V2_COLS = [
+  ['Test month', (f) => `${f.test_from || '?'} → ${f.test_to || '?'}`],
+  ['PR-AUC', (f) => fmt(f.pr_auc, 3)], ['Precision', (f) => fmt(f.precision, 3)],
+  ['Base net', (f) => f.baseline?.net_pnl_pct, true], ['ML net', (f) => f.ml?.net_pnl_pct, true],
+  ['Base Sharpe', (f) => fmt(f.baseline?.sharpe, 2)], ['ML Sharpe', (f) => fmt(f.ml?.sharpe, 2)],
+  ['Base trades', (f) => fmt(f.baseline?.num_trades, 0)], ['ML trades', (f) => fmt(f.ml?.num_trades, 0)],
+  ['Base DD', (f) => (f.baseline?.max_drawdown_pct == null ? '–' : `${fmt(f.baseline.max_drawdown_pct, 2)}%`)],
+  ['ML DD', (f) => (f.ml?.max_drawdown_pct == null ? '–' : `${fmt(f.ml.max_drawdown_pct, 2)}%`)],
+]
+
+function renderModelV2(m) {
+  const t = m.training || {}, ev = m.evaluation || {}, oos = ev.oos || {}, agg = oos.aggregate || {}
+  const folds = oos.folds || []
+  $('model-meta').innerHTML = [
+    ['id', m.id], ['kind', 'meta-labeling (v2)'], ['window', `${t.window?.from} → ${t.window?.to}`],
+    ['walk-forward', `${t.train_months ?? '?'}m train / ${t.test_months ?? '?'}m test · embargo ${t.embargo_days ?? '?'}d`],
+    ['model', `${m.model?.framework || '?'}${m.model?.calibration ? ' · calibrated' : ''}`],
+    ['threshold', fmt(m.model?.decision_threshold, 3)], ['features', (m.features?.names || []).length],
+    ['dataset', t.dataset], ['created', (m.created_at || '').slice(0, 19).replace('T', ' ')],
+  ].map(([k, v]) => `<span>${k} <b>${esc(v)}</b></span>`).join('') +
+    `<span>file <b class="mono">${esc(m._file)}</b></span>`
+  const sum = (side, k) => folds.reduce((acc, f) => acc + (Number(f[side]?.[k]) || 0), 0)
+  const baseT = sum('baseline', 'num_trades'), mlT = sum('ml', 'num_trades')
+  const tiles = [
+    ['OOS folds', folds.length, ''],
+    ['Mean PR-AUC', fmt(agg.pr_auc_mean, 3), ''],
+    ['ML vs baseline net', pct(agg.ml_vs_baseline_net_pnl_pct), cls(agg.ml_vs_baseline_net_pnl_pct)],
+    ['Trades kept', baseT ? `${mlT}/${baseT} (${Math.round((mlT / baseT) * 100)}%)` : '–', ''],
+    (() => { const g = Object.values(agg.gates || {}).filter((x) => typeof x === 'boolean'); return ['Gates passed', g.length ? `${g.filter(Boolean).length}/${g.length}` : '–', ''] })(),
+    ['Shippable', agg.shippable == null ? '–' : (agg.shippable ? 'yes' : 'no'), agg.shippable === false ? 'neg' : (agg.shippable ? 'pos' : '')],
+  ]
+  $('model-tiles').innerHTML = tiles.map(([k, v, c]) => `<div class="tile"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`).join('')
+  $('res-title').innerHTML = 'Out-of-sample walk-forward folds: baseline Dev Signal vs ML-filtered'
+  $('res-head').innerHTML = V2_COLS.map(([label]) => `<th>${label}</th>`).join('')
+  $('res-body').innerHTML = folds.length ? folds.map((f) => '<tr>' + V2_COLS.map(([, get, money]) => {
+    const v = get(f); return money ? `<td class="${cls(v)}">${pct(v)}</td>` : `<td>${v ?? '–'}</td>`
+  }).join('') + '</tr>').join('') : `<tr><td colspan="${V2_COLS.length}" class="mut">No OOS folds in this artifact.</td></tr>`
+  const imp = Object.entries(ev.feature_importance || {}).sort((a, b) => b[1] - a[1]).slice(0, 20)
+  $('detail-title').innerHTML = 'Feature importance <span class="mut" style="font-weight:400">· top 20</span>'
+  $('detail-head').innerHTML = '<th>Feature</th><th>Importance</th><th></th><th></th>'
+  $('detail-body').innerHTML = imp.map(([k, v]) => `<tr><td class="mono">${esc(k)}</td><td><b>${fmt(v, 4)}</b></td><td></td><td></td></tr>`).join('') ||
+    '<tr><td colspan="4" class="mut">No feature importance recorded.</td></tr>'
+  const ds = t.dataset || S.info.default_dataset
+  const gates = Object.entries(agg.gates || {})
+  const gateHtml = gates.length ? `<h4 style="margin-top:12px">Ship gates</h4><table><tbody>` + gates.map(([k, v]) =>
+    `<tr><td class="mono">${esc(k)}</td><td class="${typeof v === 'boolean' ? (v ? 'pos' : 'neg') : ''}">${typeof v === 'boolean' ? (v ? '✓ pass' : '✗ fail') : fmt(v, 3)}</td></tr>`).join('') + '</tbody></table>' : ''
+  $('detail-extra').innerHTML = gateHtml + `<p class="mut" style="font-size:12px">The chart indicator for this model fetches server-scored markers from <code>POST /api/ml/score</code>; each kept fire shows its P(profit).</p>` +
+    `<p style="margin-top:10px"><a target="_blank" rel="noopener" href="${esc(S.info.main_frontend)}/?view=chart&name=RELIANCE&exchange=NSE&interval=3m&offline=${encodeURIComponent(ds)}">Open RELIANCE chart with ${esc(m.label)} ↗</a></p>`
+}
+
+function renderModelV1(m) {
+  $('res-title').innerHTML = 'Per symbol: cross-validation (in window) vs out-of-sample (30 trading days after it) <span class="mut" style="font-weight:400">· click a row</span>'
+  $('detail-head').innerHTML = '<th>Knob</th><th>Default</th><th>Tuned</th><th>Change</th>'
   const t = m.training || {}
   const rows = Object.entries(m.per_symbol || {}).map(([symbol, v]) => ({ symbol, ...v }))
   $('model-meta').innerHTML = [
@@ -670,17 +885,10 @@ function renderModel() {
     COLS.map((c) => { const v = c.get(r); return `<td class="${c.c ? cls(v) : ''}">${c.f ? c.f(v) : esc(v)}</td>` }).join('') + '</tr>').join('')
     : `<tr><td colspan="${COLS.length}" class="mut">No symbols succeeded.</td></tr>`
   renderDetail()
-  const raw = JSON.stringify(Object.fromEntries(Object.entries(m).filter(([k]) => !k.startsWith('_'))), null, 2)
-  $('model-raw').textContent = raw
-  const a = $('model-download')
-  if (a.href.startsWith('blob:')) URL.revokeObjectURL(a.href)
-  a.href = URL.createObjectURL(new Blob([raw], { type: 'application/json' }))
-  a.download = `${m.id}.json`
-  renderPipeline()
 }
 
 function renderDetail() {
-  const m = model(); if (!m) return
+  const m = model(); if (!m || String(m.version) === '2') return
   const defaults = S.info.defaults
   const row = S.resSym ? m.per_symbol[S.resSym] : null
   const params = row ? row.params : m.global_fallback?.params || {}
@@ -715,6 +923,14 @@ function wire() {
     $(id).addEventListener('input', sync); $(id).addEventListener('change', sync)
   }
   $('f-publish').addEventListener('change', renderPipeline)
+  for (const id of ['f-train-months', 'f-test-months', 'f-embargo-days', 'f-calibrate', 'f-threshold-objective']) {
+    $(id).addEventListener('input', sync); $(id).addEventListener('change', sync)
+  }
+  $('f-mode').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-mode]'); if (!b) return
+    S.mode = b.dataset.mode
+    $('f-mode').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); onModeWindow(); sync()
+  })
   $('f-preset').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-p]'); if (!b) return
     S.preset = b.dataset.p

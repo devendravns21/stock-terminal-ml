@@ -53,6 +53,16 @@ def _human(p: dict) -> str:
         return f"  · {p.get('symbol'):<12} trial {p.get('trial'):>4}  score {_num(p.get('value'))}  {p.get('state')}"
     if ev == "symbol_done":
         return f"✔ {p.get('symbol'):<12} done   best {_num(p.get('best_value'))}"
+    if ev == "run_start" and p.get("mode") == "meta":
+        return (f"▶ {p.get('model_id')}: meta-labeling over {p.get('symbols_total')} symbols · "
+                f"{p.get('model_family')} · {p.get('train_months')}m train / {p.get('test_months')}m test "
+                f"({p.get('dataset')}, {p.get('window')})")
+    if ev == "stage":
+        return f"  · stage {p.get('name')}  {round(100 * (p.get('pct') or 0))}%"
+    if ev == "fold":
+        m = p.get("metrics") or {}
+        return (f"✔ fold {p.get('index')}  test {p.get('test_from')} → {p.get('test_to')}  "
+                f"PR-AUC {_num(m.get('pr_auc'))}  baseline net {_num(m.get('baseline_net_pnl_pct'))}%")
     if ev == "run_start":
         return (f"▶ {p.get('model_id')}: {p.get('symbols_total')} symbols × {p.get('trials')} trials "
                 f"({p.get('preset')}, {p.get('dataset')}, {p.get('window')})")

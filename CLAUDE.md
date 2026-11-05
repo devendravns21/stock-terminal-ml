@@ -20,7 +20,7 @@ pytest tests/test_smoke.py::test_smoke -q  # single test
 
 There is no linter or formatter configured.
 
-The only test is an end-to-end smoke test (10 trials, 1 symbol). It **skips silently** when no offline dataset exists on disk, so a "pass" may mean it didn't run at all. Use `-rs` to see skips. It is the guard against `app.*` import drift.
+`tests/test_smoke.py` is the end-to-end v1 run (10 trials, 1 symbol) and the guard against `app.*` import drift. The other tests cover the v2 plumbing (artifact, scorer, `/api/ml/score`, v2 backtests, `train_meta` CLI, dashboard meta mode); `tests/_toy.py` builds a tiny LightGBM v2 artifact for them. Tests needing the offline dataset skip without it; `-rs` is in `addopts` so the skip reason always prints. Backend tests live here too (the backend has none). They mount `ml.router` on a bare FastAPI app and point the registry at a temp models dir (`conftest.py`).
 
 Use `--jobs 1` when debugging. It runs serially in-process. Otherwise the trainer uses a `spawn` multiprocessing Pool, and exceptions inside `_tune_symbol` are caught and turned into `error` progress events, not tracebacks.
 
@@ -38,7 +38,9 @@ The global fallback is the median of each tuned param across symbols (int knobs 
 
 **Progress protocol ([progress.py](stock_terminal_ml/progress.py)).** Progress is an append-only, fsync'd JSONL stream with events `run_start`, `trial`, `symbol_done`, `run_done` and `error`. Two consumers tail it: the backend's `/api/ml/train` route (it spawns this CLI with `--config` + `--output` from `backend/.ml_jobs/<id>/`) and this repo's dashboard. Changing event names or fields breaks both. Setting `ML_PROGRESS_ECHO=1` also prints a human-readable line per event to stderr.
 
-**Artifact ([artifact.py](stock_terminal_ml/artifact.py)).** Schema version `"1"` with keys `id`, `label`, `created_at`, `training`, `per_symbol{SYM:{params,cv,oos,best_value}}` and `global_fallback.params`. It is written atomically (`.tmp` → `os.replace`). The shape must match the backend's `docs/backend/ml-pipeline.md` and registry loader.
+**Meta-labeling v2 ([train_meta.py](stock_terminal_ml/train_meta.py), `meta/`).** `train_meta --mode params` (the default) delegates to `train.main`; `--mode meta` resolves config with the same precedence quirk and calls `meta/train_meta.run(cfg, progress)`, which is a stub until `docs/ml-v2/02-ml-methodology-plan.md` lands. Inference, features and the v2 schema live in the backend package `app.integrations.ml_meta` so serving and training share one implementation. Build training features with `ml_meta.scorer.fire_features`, not by hand. On macOS LightGBM needs `brew install libomp`.
+
+**Artifact ([artifact.py](stock_terminal_ml/artifact.py)).** Schema version `"1"` with keys `id`, `label`, `created_at`, `training`, `per_symbol{SYM:{params,cv,oos,best_value}}` and `global_fallback.params`. It is written atomically (`.tmp` → `os.replace`). v2 artifacts (`build_v2` / `write_atomic_v2`, `kind: "meta_labeling"`) are validated by `ml_meta.schema.validate_v2`. The shape must match the backend's `docs/backend/ml-pipeline.md` and registry loader.
 
 **Dashboard ([dashboard.py](stock_terminal_ml/dashboard.py) + [dashboard/index.html](dashboard/index.html)).** A stdlib `ThreadingHTTPServer` with a JSON API (documented in the module docstring) serves a single static page that polls that API.
 - `POST /api/runs` validates input and writes `outputs/runs/<YYYYmmdd-HHMMSS>/{config.json,run.sh}`, then opens a **new Terminal window** (osascript on macOS) that runs the trainer CLI. The dashboard never runs training in-process. It learns run state from files in the run dir: `pid`, `progress.jsonl`, `terminal.log`, `exit_code` and `cancelled`. Stop sends SIGTERM to the process group.

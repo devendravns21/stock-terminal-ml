@@ -28,17 +28,20 @@ import urllib.request
 import webbrowser
 from dataclasses import fields
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from app.core.config import settings
-from app.integrations.offline.store import DEFAULT_DATASET, list_datasets
+from app.integrations.offline.store import DEFAULT_DATASET, list_datasets, load_symbol
 from app.integrations.signals.config import Params
 
 from .objectives import BY_NAME as OBJECTIVES
 from .search_space import RANGES, TUNED_KEYS, WIDEN_KEYS
 from .train import PRESETS
+from .meta.cv import DAYS_PER_MONTH, walk_forward
+from .train_meta import META_DEFAULTS, MODEL_FAMILIES
 
 REPO = Path(__file__).resolve().parents[1]
 PAGE = REPO / "dashboard" / "index.html"
@@ -118,6 +121,28 @@ def _http_json(url: str, timeout: float = 1.0):
 
 # ---------------------------------------------------------------- info
 
+_IST = ZoneInfo("Asia/Kolkata")
+_calendar_cache: dict[tuple, list[str]] = {}
+
+
+def _trading_days(m: dict) -> list[str]:
+    """IST session dates present in a dataset (YYYY-MM-DD, sorted), read from the
+    intraday candles of its longest symbol. Cached per (dataset, fetched_at)."""
+    syms = m.get("symbols") or []
+    if not syms:
+        return []
+    key = (m.get("dataset"), m.get("fetched_at"))
+    if key not in _calendar_cache:
+        best = max(syms, key=lambda s: (s.get("days") or 0, s.get("kind") == "index"))
+        try:
+            data = load_symbol(m["dataset"], best["symbol"]) or {}
+        except (OSError, ValueError):
+            data = {}
+        days = {datetime.fromtimestamp(c["time"], _IST).date().isoformat() for c in data.get("candles", [])}
+        _calendar_cache[key] = sorted(days)
+    return _calendar_cache[key]
+
+
 def info() -> dict:
     defaults = Params()
     datasets = []
@@ -127,6 +152,7 @@ def info() -> dict:
             "title": m.get("title"),
             "from": (m.get("from") or "")[:10],
             "to": (m.get("to") or "")[:10],
+            "trading_days": _trading_days(m),
             "symbols": [
                 {"symbol": s["symbol"], "exchange": s.get("exchange"), "kind": s.get("kind"),
                  "days": s.get("days"), "last_close": s.get("last_close")}
@@ -142,6 +168,9 @@ def info() -> dict:
         "datasets": datasets,
         "default_dataset": DEFAULT_DATASET,
         "presets": PRESETS,
+        "modes": ["params", "meta"],
+        "meta_defaults": META_DEFAULTS,
+        "model_families": list(MODEL_FAMILIES),
         "objectives": [{"name": k, "help": OBJECTIVE_HELP.get(k, "")} for k in OBJECTIVES],
         "search_space": space,
         "defaults": {f.name: getattr(defaults, f.name) for f in fields(Params)
@@ -223,7 +252,40 @@ def _validate(body: dict) -> dict:
         raise BadRequest("trials must be 1–2000")
     jobs = max(0, min(jobs, os.cpu_count() or 1))
     label = str(body.get("label") or "").strip()[:60]
+    mode = str(body.get("mode") or "params").lower()
+    if mode not in ("params", "meta"):
+        raise BadRequest("mode must be 'params' or 'meta'")
+    meta: dict = {}
+    if mode == "meta":
+        try:
+            meta = {
+                "train_months": int(body.get("train_months", META_DEFAULTS["train_months"])),
+                "test_months": int(body.get("test_months", META_DEFAULTS["test_months"])),
+                "embargo_days": int(body.get("embargo_days", META_DEFAULTS["embargo_days"])),
+            }
+        except (TypeError, ValueError):
+            raise BadRequest("train/test months and embargo days must be integers")
+        if not (1 <= meta["train_months"] <= 24 and 1 <= meta["test_months"] <= 12):
+            raise BadRequest("train months must be 1–24 and test months 1–12")
+        if not (0 <= meta["embargo_days"] <= 10):
+            raise BadRequest("embargo days must be 0–10")
+        days = [d for d in known[dataset].get("trading_days", []) if f.isoformat() <= d <= t.isoformat()]
+        if days and not walk_forward([date.fromisoformat(d) for d in days], train_months=meta["train_months"],
+                                     test_months=meta["test_months"], embargo_days=meta["embargo_days"]):
+            need = meta["train_months"] * DAYS_PER_MONTH + 5
+            raise BadRequest(
+                f"window {f} → {t} has {len(days)} trading days; {meta['train_months']}m train needs "
+                f"{meta['train_months'] * DAYS_PER_MONTH} + at least 5 test days = {need}. "
+                f"Widen the window or lower train months.")
+        meta["model_family"] = str(body.get("model_family") or META_DEFAULTS["model_family"])
+        if meta["model_family"] not in MODEL_FAMILIES:
+            raise BadRequest(f"unknown model family {meta['model_family']!r}")
+        meta["calibrate"] = body.get("calibrate", True) is not False
+        meta["threshold_objective"] = body.get("threshold_objective") or objective
+        if meta["threshold_objective"] not in OBJECTIVES:
+            raise BadRequest(f"unknown threshold objective {meta['threshold_objective']!r}")
     return {
+        "mode": mode, "meta": meta,
         "from": f.isoformat(), "to": t.isoformat(), "target_pct": target, "sl_pct": sl,
         "preset": preset, "trials": trials, "objective": objective, "dataset": dataset,
         "symbols": symbols, "all_symbols": len(symbols) == len(all_syms),
@@ -234,12 +296,18 @@ def _validate(body: dict) -> dict:
 
 def _terminal_script(rdir: Path, cmd: list[str], cfg: dict) -> str:
     q = shlex.quote
+    if cfg.get("mode") == "meta":
+        search = (f"meta     {cfg['model_family']} · walk-forward {cfg['train_months']}m train / "
+                  f"{cfg['test_months']}m test · embargo {cfg['embargo_days']}d · "
+                  f"{'calibrated' if cfg['calibrate'] else 'uncalibrated'} · {cfg['threshold_objective']}")
+    else:
+        search = (f"search   {cfg['preset']} · {cfg['trials_per_symbol']} trials/symbol · {cfg['objective']}"
+                  + (" · widen" if cfg["widen"] else ""))
     banner = [
         f"Dev Signal ML trainer · run {rdir.name}",
         f"model    {cfg['model_id']}  ({cfg['label']})",
         f"window   {cfg['window']['from']} → {cfg['window']['to']}   target {cfg['target_pct']}%  stop {cfg['sl_pct']}%",
-        f"search   {cfg['preset']} · {cfg['trials_per_symbol']} trials/symbol · {cfg['objective']}"
-        + (" · widen" if cfg["widen"] else ""),
+        search,
         f"symbols  {len(cfg['symbols'])} from {cfg['dataset']}",
         f"output   {cfg['output']}",
     ]
@@ -301,15 +369,17 @@ def start_run(body: dict) -> dict:
     label = v["label"] or model_id.replace("dev_signal_ml", "Dev Signal ML")
     output = (MODELS_DIR / f"{model_id}.json") if v["publish"] else (rdir / f"{model_id}.json")
     progress = rdir / "progress.jsonl"
-    trials = v["trials"] or PRESETS[v["preset"]]["trials"]
+    is_meta = v["mode"] == "meta"
+    trials = 0 if is_meta else (v["trials"] or PRESETS[v["preset"]]["trials"])
     workers = v["jobs"] or max(1, (os.cpu_count() or 2) - 1)
 
     cmd = [
-        sys.executable, "-m", "stock_terminal_ml.train",
+        sys.executable, "-m", "stock_terminal_ml.train_meta" if is_meta else "stock_terminal_ml.train",
+        *(["--mode", "meta"] if is_meta else []),
         "--window", f"{v['from']}:{v['to']}",
         "--target-pct", str(v["target_pct"]),
         "--sl-pct", str(v["sl_pct"]),
-        "--preset", v["preset"],
+        *([] if is_meta else ["--preset", v["preset"]]),
         "--dataset", v["dataset"],
         "--objective", v["objective"],
         "--model-id", model_id,
@@ -318,15 +388,23 @@ def start_run(body: dict) -> dict:
         "--progress", str(progress),
         "--jobs", str(v["jobs"]),
     ]
-    if v["trials"]:
+    if is_meta:
+        m = v["meta"]
+        cmd += ["--train-months", str(m["train_months"]), "--test-months", str(m["test_months"]),
+                "--embargo-days", str(m["embargo_days"]), "--model-family", m["model_family"],
+                "--calibrate" if m["calibrate"] else "--no-calibrate",
+                "--threshold-objective", m["threshold_objective"]]
+    if v["trials"] and not is_meta:
         cmd += ["--trials", str(v["trials"])]
     if not v["all_symbols"]:
         cmd += ["--symbols", ",".join(v["symbols"])]
-    if v["widen"]:
+    if v["widen"] and not is_meta:
         cmd.append("--widen")
 
     cfg = {
         "run_id": run_id,
+        "mode": v["mode"],
+        **v["meta"],
         "model_id": model_id,
         "label": label,
         "window": {"from": v["from"], "to": v["to"]},
@@ -401,6 +479,8 @@ def summarize(run_id: str, symbol: str | None = None) -> dict:
     events: list[dict] = []
     series: list[dict] = []
     run_start = run_done = None
+    folds: list[dict] = []
+    stage = None
     try:
         raw = (rdir / "progress.jsonl").read_text().splitlines()
     except OSError:
@@ -439,8 +519,17 @@ def summarize(run_id: str, symbol: str | None = None) -> dict:
             run_start = ev
         elif kind == "run_done":
             run_done = ev
+        elif kind == "fold":
+            folds.append(ev)
+        elif kind == "stage":
+            stage = ev
         if kind != "trial":
             events.append(ev)
+    if cfg.get("mode") == "meta" and run_done:
+        # The pooled meta model has no per-symbol events; the run finishing covers all.
+        for s in syms.values():
+            if s["state"] in ("running", "queued"):
+                s["state"] = "done"
     if status in ("cancelled", "interrupted", "error"):
         for s in syms.values():
             if s["state"] in ("running", "queued"):
@@ -479,6 +568,9 @@ def summarize(run_id: str, symbol: str | None = None) -> dict:
         "elapsed_s": elapsed,
         "eta_s": eta,
         "run_started": run_start is not None,
+        "mode": cfg.get("mode", "params"),
+        "folds": folds,
+        "stage": stage,
         "run_done": run_done,
         "artifact_exists": bool(output and output.is_file()),
         "events": events[-60:],
@@ -502,6 +594,7 @@ def list_runs() -> list[dict]:
             "started_at": cfg.get("started_at"),
             "symbols": len(cfg.get("symbols", [])),
             "preset": cfg.get("preset"),
+            "mode": cfg.get("mode", "params"),
             "window": cfg.get("window"),
         })
     return out
@@ -543,6 +636,12 @@ def list_models() -> list[dict]:
         data["_published"] = published
         data["_ref"] = p.stem if published else f"{p.parent.name}/{p.stem}"
         data["_mtime"] = p.stat().st_mtime
+        model = data.get("model")
+        if isinstance(model, dict) and isinstance(model.get("booster"), str):
+            # v2: the LightGBM text dump can be megabytes; the page never needs it.
+            model = dict(model)
+            model["booster_bytes"] = len(model.pop("booster"))
+            data["model"] = model
         out.append(data)
     out.sort(key=lambda d: d["_mtime"], reverse=True)
     return out

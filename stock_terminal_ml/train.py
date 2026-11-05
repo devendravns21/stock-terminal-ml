@@ -297,8 +297,9 @@ def _median_params(per_symbol: dict[str, dict], widen: bool) -> dict:
     return out
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="stock-terminal-ml.train")
+def build_parser(prog: str = "stock-terminal-ml.train") -> argparse.ArgumentParser:
+    """The v1 trainer's flags. `train_meta.py` extends this parser for `--mode meta`."""
+    ap = argparse.ArgumentParser(prog=prog)
     ap.add_argument("--window", help="FROM:TO IST dates, e.g. 2026-06-01:2026-08-31")
     ap.add_argument("--target-pct", type=float, default=1.0)
     ap.add_argument("--sl-pct", type=float, default=0.5)
@@ -319,7 +320,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--label", help="override artifact label")
     ap.add_argument("--folds", type=int, default=3)
     ap.add_argument("--initial-capital", type=float, default=100000.0)
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
 
     cfg: dict = {}
     if args.config:

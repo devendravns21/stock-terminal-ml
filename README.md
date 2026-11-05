@@ -66,6 +66,24 @@ Flags: `--window FROM:TO`, `--target-pct`, `--sl-pct`, `--preset {fast,standard,
 
 With no `--symbols`, all symbols in the configured offline dataset are tuned.
 
+### Meta-labeling (v2)
+
+```bash
+python -m stock_terminal_ml.train_meta --mode meta \
+  --window 2026-01-01:2026-10-31 \
+  --train-months 3 --test-months 1 --embargo-days 1 \
+  --output /path/to/dev_signal_ml5.json
+```
+
+`train_meta` with `--mode params` (the default) is the v1 trainer above, unchanged. `--mode meta`
+adds `--train-months`, `--test-months`, `--embargo-days`, `--model-family lightgbm`,
+`--calibrate/--no-calibrate` and `--threshold-objective`, emits `run_start`, calls
+`stock_terminal_ml/meta/train_meta.run(cfg, progress)` and emits `run_done`. That training
+logic is **still a stub that raises** (see `docs/ml-v2/02-ml-methodology-plan.md`), so a meta run
+currently ends with an `error` event. The dashboard's **Mode** selector launches this CLI.
+
+LightGBM on macOS needs OpenMP: `brew install libomp`.
+
 ## How it integrates with the backend
 
 The backend's `/api/ml/train` route writes a `config.json` into
@@ -76,5 +94,7 @@ emitted `progress.jsonl`. When the run finishes the artifact lands in
 ## Tests
 
 ```bash
-pytest -q
+pytest -q        # -rs is on by default (pyproject), so skips print their reason
 ```
+
+Tests that need the offline dataset (smoke, scorer, `/api/ml/score`, backtests) skip without it.

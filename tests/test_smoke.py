@@ -39,7 +39,8 @@ def _pick_symbol() -> str | None:
 def test_smoke(tmp_path: Path) -> None:
     sym = _pick_symbol()
     if not sym:
-        pytest.skip("no offline dataset on disk")
+        pytest.skip(f"no offline dataset on disk ({settings.offline_data_dir / DEFAULT_DATASET}); "
+                    "smoke test did NOT run")
 
     out = tmp_path / "dev_signal_ml_smoke.json"
     rc = main([

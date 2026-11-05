@@ -12,6 +12,10 @@ Shape matches `docs/backend/ml-pipeline.md`:
       "global_fallback": {"params": {...}}
     }
 
+v2 (meta-labeling, `build_v2` / `write_atomic_v2`) follows the backend's
+`app.integrations.ml_meta.schema` — see `docs/ml-v2/01-mechanical-plan.md`
+Appendix B. The LightGBM booster is stored as `Booster.model_to_string()` text.
+
 Writes atomically: .tmp → os.replace.
 """
 from __future__ import annotations
@@ -23,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from app.integrations.kite.session import IST
+from app.integrations.ml_meta.schema import ARTIFACT_KIND, ARTIFACT_VERSION, validate_v2
 
 
 def build(
@@ -59,6 +64,45 @@ def _validate(payload: dict) -> None:
 
 def write_atomic(payload: dict, path: Path) -> Path:
     _validate(payload)
+    return _write(payload, path)
+
+
+def build_v2(
+    *,
+    model_id: str,
+    label: str,
+    primary: dict,
+    model: dict,
+    features: dict,
+    training: dict,
+    evaluation: dict,
+    per_symbol: dict[str, dict] | None,
+    global_fallback: dict,
+) -> dict[str, Any]:
+    """Assemble a v2 (meta-labeling) artifact. Values are placed as given; the
+    trainer supplies `model["booster"]` as `booster.model_to_string()`."""
+    return {
+        "version": ARTIFACT_VERSION,
+        "kind": ARTIFACT_KIND,
+        "id": model_id,
+        "label": label,
+        "created_at": datetime.now(IST).isoformat(),
+        "primary": primary,
+        "model": model,
+        "features": features,
+        "training": training,
+        "evaluation": evaluation,
+        "per_symbol": per_symbol or {},
+        "global_fallback": global_fallback,
+    }
+
+
+def write_atomic_v2(payload: dict, path: Path) -> Path:
+    validate_v2(payload)
+    return _write(payload, path)
+
+
+def _write(payload: dict, path: Path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
